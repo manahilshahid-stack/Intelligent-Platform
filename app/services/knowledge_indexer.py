@@ -522,7 +522,7 @@ def index_crm_note(crm_note_id: int, db) -> int:
     """
     import json as _json
     from ..models import CrmNote, KnowledgeChunk, KnowledgeSource
-    from .embeddings import embed_text, chunk_text
+    from .embeddings import embed_texts, chunk_text
     from .settings_service import get_openrouter_api_key
     from .vector_store import set_row_vector
 
@@ -596,15 +596,25 @@ def index_crm_note(crm_note_id: int, db) -> int:
     db.add(source)
     db.flush()
 
+    # Build every window's body first, then embed them all in ONE batched
+    # request instead of one request per window (the main speed-up).
+    chunk_bodies = [
+        (f"{header}\n\n{w}".strip() if header else w) for w in windows
+    ]
+    try:
+        vectors = embed_texts(chunk_bodies, api_key)
+    except Exception as exc:
+        log.warning("index_crm_note: batch embedding failed for note %d: %s", crm_note_id, exc)
+        db.rollback()
+        return 0
+
+    # Sanitize ONCE per note (was once per chunk — the dominant cost). The
+    # whole-note sanitized copy is reused for every window of this note.
+    note_sanitized = sanitize_text_llm(body, api_key) if body else None
+
     pending = []
     stored = 0
-    for w in windows:
-        chunk_body = f"{header}\n\n{w}".strip() if header else w
-        try:
-            vec = embed_text(chunk_body, api_key)
-        except Exception as exc:
-            log.warning("index_crm_note: embedding failed for note %d: %s", crm_note_id, exc)
-            continue
+    for chunk_body, vec in zip(chunk_bodies, vectors):
         themes = infer_basic_themes(chunk_body, sector)
         chunk = KnowledgeChunk(
             knowledge_source_id=source.id,
@@ -612,7 +622,7 @@ def index_crm_note(crm_note_id: int, db) -> int:
             source_type="crm_note",
             source_id=crm_note_id,
             text=chunk_body,
-            sanitized_text=sanitize_text_llm(chunk_body, api_key),
+            sanitized_text=note_sanitized,
             embedding=_json.dumps(vec),
             sector=sector,
             themes_json=_json.dumps(themes) if themes else None,

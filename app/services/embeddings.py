@@ -316,6 +316,79 @@ def embed_text(text: str, api_key: str) -> list[float]:
 
 
 # ---------------------------------------------------------------------------
+# 3b. embed_texts — batched embeddings (many inputs per request)
+# ---------------------------------------------------------------------------
+
+def embed_texts(texts: list[str], api_key: str, batch_size: int = 64) -> list[list[float]]:
+    """
+    Embed many texts using as few OpenRouter requests as possible.
+
+    The OpenRouter/OpenAI embeddings endpoint accepts a LIST of inputs and
+    returns one vector per input, so this collapses N single-text calls into
+    ceil(N / batch_size) calls — the main indexing speed-up.
+
+    Order is preserved (results are re-sorted by the API's `index` field).
+    Raises RuntimeError on failure. Returns [] for empty input.
+    """
+    if not texts:
+        return []
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://portfolio-intelligence.app",
+        "X-Title": "Portfolio Intelligence Platform",
+    }
+    from ..config import settings as _settings
+
+    out: list[list[float]] = []
+    for start in range(0, len(texts), batch_size):
+        batch = texts[start : start + batch_size]
+        payload = {
+            "model": _settings.openrouter_embedding_model,
+            "input": batch,
+        }
+        try:
+            resp = httpx.post(
+                OPENROUTER_EMBEDDING_URL,
+                json=payload,
+                headers=headers,
+                timeout=REQUEST_TIMEOUT,
+            )
+        except httpx.TimeoutException as exc:
+            raise RuntimeError(
+                f"Embedding batch timed out after {REQUEST_TIMEOUT}s."
+            ) from exc
+        except httpx.RequestError as exc:
+            raise RuntimeError(f"Embedding batch request failed: {exc}") from exc
+
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"OpenRouter embeddings returned HTTP {resp.status_code}: {resp.text[:400]}"
+            )
+
+        try:
+            data = resp.json()
+            items = data["data"]
+        except (KeyError, ValueError) as exc:
+            raise RuntimeError(f"Unexpected embedding response shape: {exc}") from exc
+
+        # Re-sort by `index` so vectors line up with the input order.
+        items_sorted = sorted(items, key=lambda d: d.get("index", 0))
+        if len(items_sorted) != len(batch):
+            raise RuntimeError(
+                f"Embedding batch returned {len(items_sorted)} vectors for {len(batch)} inputs."
+            )
+        for it in items_sorted:
+            vec = it.get("embedding")
+            if not isinstance(vec, list) or not vec:
+                raise RuntimeError("Embedding API returned an empty vector in a batch.")
+            out.append(vec)
+
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 4. embed_approved_extraction
 # ---------------------------------------------------------------------------
 
@@ -394,15 +467,16 @@ def embed_approved_extraction(extraction_id: int, db: "Session") -> int:
         extraction_id, len(texts), len(readable),
     )
 
+    # Embed all chunks in one batched request (was one request per chunk).
+    try:
+        vectors = embed_texts(texts, api_key)
+    except RuntimeError as exc:
+        log.error("Failed to embed extraction %d: %s", extraction_id, exc)
+        raise
+
     stored = 0
     created: list[tuple[object, list[float]]] = []
-    for i, text in enumerate(texts):
-        try:
-            vector = embed_text(text, api_key)
-        except RuntimeError as exc:
-            log.error("Failed to embed chunk %d of extraction %d: %s", i, extraction_id, exc)
-            raise
-
+    for text, vector in zip(texts, vectors):
         chunk = Chunk(
             document_id=extraction.document_id,
             extraction_id=extraction_id,
