@@ -802,6 +802,13 @@ _LIST_CUES = (
     "list", "all", "which", "how many", "name", "show", "what are", "give me",
     "tell me about", "every", "overview of", "summary of", "across",
 )
+# Cues that indicate a count/enumerate-EVERYTHING question with no specific sector
+# (e.g. "how many companies have we analyzed so far", "list all the companies").
+_ALL_CUES = (
+    "how many", " all ", "every ", "total", "so far", "in total", "overall",
+    " count", "entire", "complete list", "altogether",
+)
+_ALL_SENTINEL = "*"
 _INTENT_FILLERS = {
     "the", "all", "about", "me", "tell", "which", "how", "many", "list", "show",
     "of", "our", "your", "these", "those", "analyzed", "analysed", "a", "an",
@@ -826,13 +833,20 @@ def detect_category_list_intent(query: str) -> str | None:
     if not any(cue in q for cue in _LIST_CUES):
         return None
     m = _re.search(rf"([a-z0-9/&\-\. ]+?)\s+{_ENTITY_RE}\b", q)
-    if not m:
-        return None
-    toks = [t for t in _re.findall(r"[a-z0-9/&\-\.]+", m.group(1)) if t not in _INTENT_FILLERS]
-    if not toks:
-        return None
-    term = toks[-1].strip("./-&")
-    return term if len(term) >= 3 else None
+    term: str | None = None
+    if m:
+        toks = [t for t in _re.findall(r"[a-z0-9/&\-\.]+", m.group(1)) if t not in _INTENT_FILLERS]
+        if toks:
+            cand = toks[-1].strip("./-&")
+            if len(cand) >= 3:
+                term = cand
+    if term:
+        return term
+    # No specific sector mentioned — treat as a count/list-everything question
+    # only when there's an explicit "all / how many / total" style cue.
+    if any(c in q for c in _ALL_CUES):
+        return _ALL_SENTINEL
+    return None
 
 
 def list_ventures_by_category(db: "Session", term: str, limit: int = 50) -> tuple[list[dict], int]:
@@ -851,26 +865,31 @@ def list_ventures_by_category(db: "Session", term: str, limit: int = 50) -> tupl
     if not term_l:
         return [], 0
 
-    # Scan indexed venture chunks; match the term on a sector/category line, or
-    # on the (future) populated sector column.
-    rows = db.execute(
-        select(KnowledgeChunk.crm_venture_id, KnowledgeChunk.text, KnowledgeChunk.sector)
-        .where(
-            KnowledgeChunk.source_type == "crm_venture",
-            KnowledgeChunk.crm_venture_id.is_not(None),
-        )
-    ).all()
-
     matched: set[int] = set()
-    for vid, text, sector in rows:
-        if sector and term_l in sector.lower():
-            matched.add(vid)
-            continue
-        for line in (text or "").splitlines():
-            ls = line.strip().lower()
-            if ls.startswith(_SECTOR_LINE_PREFIXES) and term_l in ls:
+    if term_l in (_ALL_SENTINEL, "all", "__all__"):
+        # Count/list EVERYTHING: every company in the pipeline that has a name.
+        matched = set(
+            db.scalars(select(CrmVenture.id).where(CrmVenture.name.is_not(None))).all()
+        )
+    else:
+        # Scan indexed venture chunks; match the term on a sector/category line,
+        # or on the (future) populated sector column.
+        rows = db.execute(
+            select(KnowledgeChunk.crm_venture_id, KnowledgeChunk.text, KnowledgeChunk.sector)
+            .where(
+                KnowledgeChunk.source_type == "crm_venture",
+                KnowledgeChunk.crm_venture_id.is_not(None),
+            )
+        ).all()
+        for vid, text, sector in rows:
+            if sector and term_l in sector.lower():
                 matched.add(vid)
-                break
+                continue
+            for line in (text or "").splitlines():
+                ls = line.strip().lower()
+                if ls.startswith(_SECTOR_LINE_PREFIXES) and term_l in ls:
+                    matched.add(vid)
+                    break
     if not matched:
         return [], 0
 
@@ -904,6 +923,43 @@ def list_ventures_by_category(db: "Session", term: str, limit: int = 50) -> tupl
 
     items.sort(key=lambda x: (x["last_activity"] or _floor), reverse=True)
     return items[:limit], len(items)
+
+
+def format_enumeration_answer(
+    term: str, items: list[dict], total: int, show_stage: bool = True
+) -> str:
+    """
+    Render a structured company list into a clean, complete chat answer.
+
+    show_stage=False hides the deal-stage label (e.g. "· Passed") — used for the
+    LP view so external readers don't see internal pipeline status per company.
+    """
+    def _fmt_date(d):
+        try:
+            return d.strftime("%b %Y")
+        except Exception:
+            return "—"
+
+    label = "in the pipeline" if term == _ALL_SENTINEL else f"tagged “{term}”"
+    plural = "y" if total == 1 else "ies"
+    shown = len(items)
+    header = f"Merantix has {total} compan{plural} {label}"
+    if shown < total:
+        header += f" — showing the {shown} most recent"
+    header += ":"
+
+    lines = []
+    for i, it in enumerate(items, start=1):
+        stg = f" · {it['stage']}" if (show_stage and it.get("stage")) else ""
+        lines.append(f"{i}. {it['name']} (last activity {_fmt_date(it.get('last_activity'))}{stg})")
+
+    body = header + "\n\n" + "\n".join(lines)
+    if shown < total:
+        body += (
+            f"\n\n(Showing {shown} of {total}, newest first. "
+            f"Ask me to narrow by sector, stage, or year for a shorter list.)"
+        )
+    return body
 
 
 def retrieve_for_chat(

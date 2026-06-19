@@ -145,8 +145,30 @@ async def lp_chat_submit(
     assistant_reply = NO_CHUNKS_REPLY
     citations: list[dict] = []
 
+    # ── Structured enumeration shortcut (parity with admin chat) ────────────────
+    # "how many / which / list <sector> companies" → deterministic, complete,
+    # newest-first list from the CRM instead of semantic top-k (which only
+    # returned ~3 for LPs after redaction). No embeddings / LLM needed.
+    from ..services.retrieval import (
+        detect_category_list_intent, list_ventures_by_category, format_enumeration_answer,
+    )
+    enum_term = detect_category_list_intent(message)
+    enum_items: list[dict] = []
+    enum_total = 0
+    if enum_term:
+        try:
+            enum_items, enum_total = list_ventures_by_category(db, enum_term, limit=50)
+        except Exception as exc:
+            log.warning("LP enumeration failed for %r: %s", enum_term, exc)
+
     # ── Check for API key ─────────────────────────────────────────────────────
-    if not api_key:
+    if enum_term and enum_total:
+        # Hide deal-stage labels from LPs (internal pipeline status).
+        assistant_reply = format_enumeration_answer(
+            enum_term, enum_items, enum_total, show_stage=False
+        )
+        citations = []
+    elif not api_key:
         log.error("OpenRouter API key not configured")
         assistant_reply = (
             "The OpenRouter API key is not configured. "
