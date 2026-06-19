@@ -31,7 +31,13 @@ router = APIRouter(prefix="/lp")
 
 def _render(request: Request, template: str, ctx: dict, status_code: int = 200):
     ctx.setdefault("request", request)
-    return templates.TemplateResponse(request, template, ctx, status_code=status_code)
+    resp = templates.TemplateResponse(request, template, ctx, status_code=status_code)
+    # Prevent the browser back/forward cache (bfcache) from showing an
+    # authenticated page after logout. Forces a fresh request -> redirect to login.
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 def _get_lp_current_user(
@@ -93,8 +99,8 @@ def _set_lp_session_cookie(response, token: str) -> None:
 
 
 def _clear_lp_session_cookie(response) -> None:
-    """Clear LP session cookie."""
-    response.delete_cookie("lp_session")
+    """Clear LP session cookie (match the path it was set with)."""
+    response.delete_cookie("lp_session", path="/")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -281,12 +287,26 @@ def lp_dashboard(
 
 @router.post("/logout")
 def lp_logout(
+    request: Request,
     db: Annotated[Session, Depends(get_db)],
-    current_user: Annotated[LPUser | None, Depends(_get_lp_current_user)],
 ):
-    """LP logout."""
+    """LP logout: invalidate the server-side session AND clear the cookie."""
+    # Delete the server-side session row so the token can never be reused, even
+    # if the cookie lingers anywhere. (Cookie clearing alone is not enough.)
+    token = request.cookies.get("lp_session")
+    if token:
+        try:
+            db.query(LPUserSession).filter(
+                LPUserSession.token_hash == _token_hash(token)
+            ).delete(synchronize_session=False)
+            db.commit()
+        except Exception as exc:
+            log.warning("lp_logout: failed to delete session row: %s", exc)
+            db.rollback()
+
     response = RedirectResponse("/lp/login", status_code=status.HTTP_303_SEE_OTHER)
     _clear_lp_session_cookie(response)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
     return response
 
 

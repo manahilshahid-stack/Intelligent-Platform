@@ -28,7 +28,13 @@ _EXCERPT_CHARS = 300  # chars of chunk text shown as citation excerpt
 
 def _render(request: Request, template: str, ctx: dict, status_code: int = 200):
     ctx.setdefault("request", request)
-    return templates.TemplateResponse(request, template, ctx, status_code=status_code)
+    resp = templates.TemplateResponse(request, template, ctx, status_code=status_code)
+    # No bfcache: after logout, pressing Back must re-request (and redirect to login)
+    # rather than show the cached chat page.
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 def _get_or_create_lp_chat_session(lp_user: LPUser, db: Session) -> LPChatSession:
