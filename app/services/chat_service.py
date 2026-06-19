@@ -114,6 +114,13 @@ _LP_GUARDRAIL = (
     "asked. Never reveal deal pipeline, stage, probability, or personal contact "
     "information about individuals. If asked for these, say that detail is not "
     "available to you. You may still discuss strategy, products, team, market, and themes."
+    "\n\nWITHIN those bounds, be thorough and substantive — this is the priority. "
+    "Give a complete, well-organised answer that draws on ALL of the relevant context: "
+    "what each company does, its technology and product, the market and why it matters, "
+    "qualitative traction and positioning, and Merantix's perspective and thesis. When "
+    "the context supports it, explain in depth and cover multiple companies or angles "
+    "rather than a sentence or two. Do not be terse, and do not stop short while relevant "
+    "context remains — only the confidential items above are off-limits."
 )
 
 _COMPANY_GUARDRAIL = (

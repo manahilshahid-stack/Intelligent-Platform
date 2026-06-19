@@ -192,7 +192,7 @@ async def lp_chat_submit(
                 query=search_query,
                 user=temp_admin_user,
                 db=db,
-                limit=8,
+                limit=12,             # more grounding context (LP chunks are redacted, so each carries less)
                 viewer_scope="lp",   # docs + CRM with confidential fields stripped; notes/files sanitized
                 focus_company=focus_company,
             )
