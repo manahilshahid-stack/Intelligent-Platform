@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}CRM Ventures – Admin{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">CRM Ventures</span>
+{% endblock %}
+
+{% block topbar_actions %}
+<form method="post" action="/admin/crm/sync" style="display:inline-flex;align-items:center;gap:0.4rem">
+  <input type="number" name="sync_limit" min="1" placeholder="Limit (all)"
+         style="width:110px;padding:0.38rem 0.55rem;font-size:0.82rem;border:1px solid #d1d5db;
+                border-radius:6px;color:#374151"
+         title="Max companies to pull (leave blank for all)">
+  <button type="submit" class="btn btn-primary btn-sm">Sync now</button>
+</form>
+<form method="post" action="/admin/crm/reindex" style="display:inline">
+  <button type="submit" class="btn btn-secondary btn-sm"
+          onclick="this.disabled=true;this.textContent='Indexing…';this.form.submit()">
+    Re-index ventures
+  </button>
+</form>
+<form method="post" action="/admin/crm/notes/sync" style="display:inline">
+  <button type="submit" class="btn btn-secondary btn-sm"
+          onclick="this.disabled=true;this.textContent='Syncing…';this.form.submit()">
+    Sync notes
+  </button>
+</form>
+<form method="post" action="/admin/crm/notes/reindex" style="display:inline">
+  <button type="submit" class="btn btn-secondary btn-sm"
+          onclick="this.disabled=true;this.textContent='Indexing…';this.form.submit()">
+    Re-index notes
+  </button>
+</form>
+<form method="post" action="/admin/crm/gdrive/ingest" style="display:inline">
+  <button type="submit" class="btn btn-secondary btn-sm"
+          onclick="this.disabled=true;this.textContent='Fetching docs…';this.form.submit()"
+          title="Fetch &amp; index the Google Docs/Drive files linked in your CRM (pitch decks, internal docs)">
+    Ingest Google docs
+  </button>
+</form>
+<a href="/admin/settings#attio" class="btn btn-secondary btn-sm">CRM Settings</a>
+{% endblock %}
+
+{% block body %}
+<div class="page-content full">
+
+  <div class="page-header">
+    <h1>CRM Ventures</h1>
+    <p class="subtitle">
+      Records imported from Attio. Completely separate from portfolio companies.
+    </p>
+  </div>
+
+  {% if sync_run %}
+  <div class="alert alert-success">
+    Sync complete
+    {% if sync_run.sync_type %}({{ sync_run.sync_type.replace('_',' ') }}){% endif %} —
+    {{ sync_run.records_seen }} records seen,
+    {{ sync_run.records_created }} created,
+    {{ sync_run.records_updated }} updated.
+  </div>
+  {% endif %}
+
+  {% if sync_error %}
+  <div class="alert alert-error">Sync failed: {{ sync_error }}</div>
+  {% endif %}
+
+  {% if reindex_ok %}
+  <div class="alert alert-success">{{ reindex_ok }}</div>
+  {% endif %}
+
+  {% if reindex_error %}
+  <div class="alert alert-error">Re-index failed: {{ reindex_error }}</div>
+  {% endif %}
+
+  {# ── Last sync info ── #}
+  {% if last_run %}
+  <div class="text-sm text-muted" style="margin-bottom:1rem">
+    Last sync {% if last_run.sync_type %}({{ last_run.sync_type.replace('_',' ') }}){% endif %}:
+    {% if last_run.status.value == 'success' %}
+      <span style="color:#166534">✓ Success</span>
+    {% elif last_run.status.value == 'failed' %}
+      <span style="color:#991b1b">✗ Failed</span>
+    {% else %}
+      <span style="color:#92400e">Running…</span>
+    {% endif %}
+    on {{ last_run.started_at.strftime('%d %b %Y, %H:%M') }}
+    {% if last_run.records_seen is not none %}
+      — {{ last_run.records_seen }} records seen,
+        {{ last_run.records_created }} created,
+        {{ last_run.records_updated }} updated
+    {% endif %}
+    {% if last_run.error %}
+      — <span style="color:#991b1b">{{ last_run.error[:120] }}</span>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="text-sm text-muted" style="margin-bottom:1rem">No sync run yet.</div>
+  {% endif %}
+
+  {# ── Filters ── #}
+  <form method="get" action="/admin/crm/ventures" style="margin-bottom:1.25rem">
+    <div style="display:flex;flex-wrap:wrap;gap:0.6rem;align-items:flex-end">
+
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.25rem">Search</label>
+        <input type="text" name="q" value="{{ filter_q }}"
+               placeholder="Name, website, description…"
+               style="min-width:220px;padding:0.45rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+      </div>
+
+      {% if all_stages %}
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.25rem">Stage</label>
+        <select name="stage" style="min-width:130px;padding:0.45rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+          <option value="">All stages</option>
+          {% for s in all_stages %}
+          <option value="{{ s }}" {% if filter_stage == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      {% if all_sectors %}
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.25rem">Sector</label>
+        <select name="sector" style="min-width:130px;padding:0.45rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+          <option value="">All sectors</option>
+          {% for s in all_sectors %}
+          <option value="{{ s }}" {% if filter_sector == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      {% if all_owners %}
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.25rem">Owner</label>
+        <select name="owner" style="min-width:130px;padding:0.45rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+          <option value="">All owners</option>
+          {% for o in all_owners %}
+          <option value="{{ o }}" {% if filter_owner == o %}selected{% endif %}>{{ o }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      {% if all_statuses %}
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.25rem">Status</label>
+        <select name="status" style="min-width:130px;padding:0.45rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+          <option value="">All statuses</option>
+          {% for s in all_statuses %}
+          <option value="{{ s }}" {% if filter_status == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      <button class="btn btn-secondary btn-sm" type="submit">Filter</button>
+      {% if filter_q or filter_stage or filter_sector or filter_owner or filter_status %}
+      <a href="/admin/crm/ventures" class="btn btn-ghost btn-sm">Clear</a>
+      {% endif %}
+    </div>
+  </form>
+
+  {# ── Table ── #}
+  <div class="card" style="padding:0">
+    {% if ventures %}
+    <div class="overflow-auto">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Website</th>
+            <th>Stage</th>
+            <th>Sector</th>
+            <th>Owner</th>
+            <th>Status</th>
+            <th>Synced</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in ventures %}
+          <tr>
+            <td>
+              <a href="/admin/crm/ventures/{{ v.id }}" style="font-weight:500;color:#4f46e5">
+                {{ v.name or "—" }}
+              </a>
+              {% if v.description %}
+              <div class="text-sm text-muted" style="margin-top:0.1rem">
+                {{ v.description | truncate(80) }}
+              </div>
+              {% endif %}
+            </td>
+            <td class="text-sm text-muted">
+              {% if v.website %}
+              <a href="{{ 'https://' + v.website if not v.website.startswith('http') else v.website }}"
+                 target="_blank" rel="noopener" style="color:#4f46e5">{{ v.website }}</a>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if v.stage %}<span class="badge badge-neutral">{{ v.stage }}</span>{% else %}—{% endif %}
+            </td>
+            <td class="text-sm text-muted">{{ v.sector or "—" }}</td>
+            <td class="text-sm text-muted">{{ v.owner or "—" }}</td>
+            <td>
+              {% if v.status %}<span class="badge badge-info" style="font-size:0.7rem">{{ v.status }}</span>{% else %}—{% endif %}
+            </td>
+            <td class="text-sm text-muted" style="white-space:nowrap">
+              {{ v.synced_at.strftime('%d %b %Y') }}
+            </td>
+            <td>
+              <a href="/admin/crm/ventures/{{ v.id }}" class="btn btn-sm btn-ghost">View</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="padding:0.75rem 1rem;border-top:1px solid #f0f0f0;font-size:0.8rem;color:#9ca3af">
+      Showing {{ ventures | length }} of {{ total }} ventures
+    </div>
+    {% else %}
+    <div style="padding:3rem;text-align:center;color:#9ca3af">
+      <div style="font-size:2.5rem;margin-bottom:0.75rem">🏢</div>
+      {% if filter_q or filter_stage or filter_sector or filter_owner or filter_status %}
+      <p>No ventures match your filters.</p>
+      <a href="/admin/crm/ventures" class="btn btn-secondary btn-sm" style="margin-top:0.75rem">Clear filters</a>
+      {% else %}
+      <p>No CRM ventures synced yet.</p>
+      <form method="post" action="/admin/crm/sync" style="margin-top:1rem">
+        <button type="submit" class="btn btn-primary">Sync from Attio</button>
+      </form>
+      <div class="text-sm text-muted" style="margin-top:0.5rem">
+        Configure your API key in <a href="/admin/settings" style="color:#4f46e5">Settings</a> first.
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block title %}{{ venture.name or "CRM Venture" }} – CRM{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<a href="/admin/crm/ventures">CRM Ventures</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">{{ venture.name or venture.attio_record_id or venture.attio_entry_id }}</span>
+{% endblock %}
+
+{% block body %}
+<div class="page-content narrow">
+
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+    <div>
+      <h1>{{ venture.name or "Unnamed venture" }}</h1>
+      {% if venture.attio_list_id %}
+      <p class="subtitle text-sm text-muted">List: <code>{{ venture.attio_list_id }}</code></p>
+      {% endif %}
+    </div>
+    {% if venture.attio_url %}
+    <a href="{{ venture.attio_url }}" target="_blank" rel="noopener"
+       class="btn btn-secondary btn-sm" style="white-space:nowrap">
+      Open in Attio →
+    </a>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Normalised fields</h2>
+    <div class="meta-grid">
+
+      {% if venture.attio_entry_id %}
+      <span class="label">Entry ID</span>
+      <span class="text-sm" style="font-family:monospace;color:#6b7280;word-break:break-all">{{ venture.attio_entry_id }}</span>
+      {% endif %}
+
+      {% if venture.attio_record_id %}
+      <span class="label">Record ID</span>
+      <span class="text-sm" style="font-family:monospace;color:#6b7280;word-break:break-all">{{ venture.attio_record_id }}</span>
+      {% endif %}
+
+      <span class="label">Name</span>
+      <span>{{ venture.name or "—" }}</span>
+
+      <span class="label">Website</span>
+      <span>
+        {% if venture.website %}
+        <a href="{{ 'https://' + venture.website if not venture.website.startswith('http') else venture.website }}"
+           target="_blank" rel="noopener" style="color:#4f46e5">{{ venture.website }}</a>
+        {% else %}—{% endif %}
+      </span>
+
+      <span class="label">Stage</span>
+      <span>
+        {% if venture.stage %}<span class="badge badge-neutral">{{ venture.stage }}</span>{% else %}—{% endif %}
+      </span>
+
+      <span class="label">Sector</span>
+      <span>{{ venture.sector or "—" }}</span>
+
+      <span class="label">Owner</span>
+      <span>{{ venture.owner or "—" }}</span>
+
+      <span class="label">Source</span>
+      <span>{{ venture.source or "—" }}</span>
+
+      <span class="label">Status</span>
+      <span>
+        {% if venture.status %}<span class="badge badge-info">{{ venture.status }}</span>{% else %}—{% endif %}
+      </span>
+
+      <span class="label">Synced</span>
+      <span class="text-sm text-muted">{{ venture.synced_at.strftime('%d %b %Y, %H:%M') }}</span>
+
+      <span class="label">Created</span>
+      <span class="text-sm text-muted">{{ venture.created_at.strftime('%d %b %Y, %H:%M') }}</span>
+
+    </div>
+
+    {% if venture.description %}
+    <div style="margin-top:1.25rem">
+      <div class="text-sm" style="font-weight:600;color:#6b7280;margin-bottom:0.4rem;text-transform:uppercase;font-size:0.72rem;letter-spacing:.05em">Description</div>
+      <div style="font-size:0.875rem;line-height:1.7;color:#374151;white-space:pre-wrap">{{ venture.description }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Notes ── #}
+  <div class="card" style="margin-top:1rem">
+    <h2 style="display:flex;justify-content:space-between;align-items:center">
+      <span>Notes</span>
+      <span style="font-size:0.78rem;font-weight:400;color:#9ca3af">{{ notes | length }} synced</span>
+    </h2>
+
+    {% if notes %}
+    <div style="display:flex;flex-direction:column;gap:0.75rem;margin-top:0.5rem">
+      {% for note in notes %}
+      <div style="border:1px solid #e5e7eb;border-radius:8px;padding:0.9rem 1rem">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;margin-bottom:0.35rem">
+          <div style="font-weight:600;font-size:0.875rem;color:#111827">
+            {{ note.title or "(untitled)" }}
+          </div>
+          <div style="font-size:0.75rem;color:#9ca3af;white-space:nowrap;flex-shrink:0">
+            {% if note.created_at_attio %}{{ note.created_at_attio.strftime('%d %b %Y') }}{% endif %}
+            {% if note.created_by %} · {{ note.created_by }}{% endif %}
+          </div>
+        </div>
+        {% if note.content_text %}
+        <div style="font-size:0.82rem;color:#374151;line-height:1.6;white-space:pre-wrap;max-height:120px;overflow:hidden;position:relative"
+             id="note-body-{{ note.id }}">{{ note.content_text[:400] }}{% if note.content_text | length > 400 %}…{% endif %}</div>
+        {% if note.content_text | length > 400 %}
+        <button onclick="document.getElementById('note-body-{{ note.id }}').style.maxHeight='none';this.style.display='none'"
+                style="font-size:0.75rem;color:#4f46e5;background:none;border:none;cursor:pointer;padding:0;margin-top:0.25rem">
+          Show more
+        </button>
+        {% endif %}
+        {% else %}
+        <div style="font-size:0.8rem;color:#9ca3af;font-style:italic">No content</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div style="padding:1.5rem 0;text-align:center;color:#9ca3af;font-size:0.85rem">
+      No notes synced yet.
+      <a href="/admin/crm/ventures" style="color:#4f46e5">Sync Attio Notes</a> from the ventures page.
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Files ── #}
+  <div class="card" style="margin-top:1rem">
+    <h2 style="display:flex;align-items:center;justify-content:space-between">
+      <span>Files</span>
+      <span style="font-size:0.78rem;font-weight:400;color:#9ca3af">{{ files | length }} synced</span>
+    </h2>
+    {% if files %}
+    <table class="data-table" style="margin-top:0.5rem">
+      <thead>
+        <tr>
+          <th>Filename</th>
+          <th>Type</th>
+          <th>Size</th>
+          <th>Status</th>
+          <th>Preview</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in files %}
+        <tr>
+          <td style="font-weight:500;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            {{ f.filename or "—" }}
+          </td>
+          <td>
+            {% if f.file_type %}<span class="badge badge-neutral" style="font-size:0.7rem">{{ f.file_type.upper() }}</span>{% else %}—{% endif %}
+          </td>
+          <td class="text-sm text-muted">
+            {% if f.file_size %}
+              {% if f.file_size > 1048576 %}{{ "%.1f"|format(f.file_size/1048576) }} MB
+              {% elif f.file_size > 1024 %}{{ "%.0f"|format(f.file_size/1024) }} KB
+              {% else %}{{ f.file_size }} B{% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% set s = f.extraction_status.value if f.extraction_status else '' %}
+            {% if s == 'text_extracted' %}<span class="badge badge-success" style="font-size:0.7rem">Extracted</span>
+            {% elif s == 'unsupported' %}<span class="badge badge-neutral" style="font-size:0.7rem">Unsupported</span>
+            {% elif s == 'failed' %}<span class="badge badge-error" style="font-size:0.7rem">Failed</span>
+            {% elif s %}<span class="badge badge-neutral" style="font-size:0.7rem">{{ s }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-sm text-muted" style="max-width:300px">
+            {% if f.raw_text %}
+            {{ f.raw_text[:120] | replace('\n', ' ') }}…
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="padding:1.5rem 0;text-align:center;color:#9ca3af;font-size:0.85rem">
+      No files synced yet.
+      <a href="/admin/crm/ventures" style="color:#4f46e5">Sync files</a> from the ventures page.
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Raw entry JSON ── #}
+  {% if raw_entry_json_pretty %}
+  <div class="card" style="margin-top:1rem">
+    {% set section_id = "raw-entry" %}
+    <h2 style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:0.5rem"
+        onclick="toggleSection('{{ section_id }}')">
+      <span id="{{ section_id }}-icon" style="font-size:0.8rem;color:#9ca3af">▶</span>
+      Raw list entry JSON
+    </h2>
+    <pre id="{{ section_id }}" style="display:none;font-size:0.74rem;white-space:pre-wrap;
+         word-break:break-all;color:#555;background:#f5f5f5;padding:0.75rem;border-radius:5px;
+         border:1px solid #e5e5e5;max-height:500px;overflow-y:auto;margin-top:0.75rem;
+         line-height:1.5">{{ raw_entry_json_pretty }}</pre>
+  </div>
+  {% endif %}
+
+  {# ── Raw record JSON ── #}
+  {% if raw_record_json_pretty %}
+  <div class="card" style="margin-top:1rem">
+    {% set section_id = "raw-record" %}
+    <h2 style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:0.5rem"
+        onclick="toggleSection('{{ section_id }}')">
+      <span id="{{ section_id }}-icon" style="font-size:0.8rem;color:#9ca3af">▶</span>
+      Raw company record JSON
+    </h2>
+    <pre id="{{ section_id }}" style="display:none;font-size:0.74rem;white-space:pre-wrap;
+         word-break:break-all;color:#555;background:#f5f5f5;padding:0.75rem;border-radius:5px;
+         border:1px solid #e5e5e5;max-height:500px;overflow-y:auto;margin-top:0.75rem;
+         line-height:1.5">{{ raw_record_json_pretty }}</pre>
+  </div>
+  {% endif %}
+
+  {# ── Legacy raw JSON (object sync) ── #}
+  {% if raw_attio_json_pretty and not raw_entry_json_pretty %}
+  <div class="card" style="margin-top:1rem">
+    {% set section_id = "raw-legacy" %}
+    <h2 style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:0.5rem"
+        onclick="toggleSection('{{ section_id }}')">
+      <span id="{{ section_id }}-icon" style="font-size:0.8rem;color:#9ca3af">▶</span>
+      Raw Attio JSON
+    </h2>
+    <pre id="{{ section_id }}" style="display:none;font-size:0.74rem;white-space:pre-wrap;
+         word-break:break-all;color:#555;background:#f5f5f5;padding:0.75rem;border-radius:5px;
+         border:1px solid #e5e5e5;max-height:500px;overflow-y:auto;margin-top:0.75rem;
+         line-height:1.5">{{ raw_attio_json_pretty }}</pre>
+  </div>
+  {% endif %}
+
+</div>
+<script>
+function toggleSection(id) {
+  var pre = document.getElementById(id);
+  var icon = document.getElementById(id + '-icon');
+  if (!pre) return;
+  var open = pre.style.display !== 'none';
+  pre.style.display = open ? 'none' : '';
+  icon.textContent = open ? '▶' : '▼';
+}
+</script>
+{% endblock %}

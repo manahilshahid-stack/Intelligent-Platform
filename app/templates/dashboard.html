@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – Portfolio Intelligence{% endblock %}
+
+{% block breadcrumb %}
+<span class="bc-current">Dashboard</span>
+{% endblock %}
+
+{% block body %}
+<div class="page-content">
+
+  <div class="page-header">
+    <h1>Welcome{% if user.name %}, {{ user.name }}{% endif %}</h1>
+    <p class="subtitle">Here's your overview.</p>
+  </div>
+
+  <div class="card">
+    <div class="meta-grid">
+      <span class="label">Name</span>
+      <span>{{ user.name or "—" }}</span>
+
+      <span class="label">Email</span>
+      <span>{{ user.email }}</span>
+
+      <span class="label">Role</span>
+      <span>
+        {% if user.role.value == "admin" %}
+          <span class="badge badge-admin">Admin</span>
+        {% else %}
+          <span class="badge badge-user">User</span>
+        {% endif %}
+      </span>
+
+      <span class="label">Company</span>
+      <span>
+        {% if company %}{{ company.name }}
+        {% else %}<span style="color:#9ca3af">Not assigned</span>
+        {% endif %}
+      </span>
+
+      <span class="label">Member since</span>
+      <span>{{ user.created_at.strftime("%d %b %Y") }}</span>
+    </div>
+
+    {% if not company and user.role.value != "admin" %}
+    <div class="alert alert-warn mt-3">
+      You are not yet assigned to a company. An admin must assign you before you can upload documents or use chat.
+    </div>
+    {% endif %}
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem;margin-top:1.5rem">
+
+    {% if user.role.value == "admin" %}
+    <a href="/admin" class="dash-card">
+      <div class="dash-icon">⚙️</div>
+      <div class="dash-label">Admin</div>
+      <div class="dash-sub">Companies, users, settings</div>
+    </a>
+    <a href="/admin/review" class="dash-card">
+      <div class="dash-icon">🔍</div>
+      <div class="dash-label">Review queue</div>
+      <div class="dash-sub">Approve extractions</div>
+    </a>
+    {% endif %}
+
+    <a href="/documents" class="dash-card">
+      <div class="dash-icon">📄</div>
+      <div class="dash-label">Documents</div>
+      <div class="dash-sub">Upload &amp; manage files</div>
+    </a>
+
+    <a href="/chat" class="dash-card">
+      <div class="dash-icon">💬</div>
+      <div class="dash-label">Chat</div>
+      <div class="dash-sub">Ask portfolio questions</div>
+    </a>
+
+  </div>
+
+</div>
+
+<style>
+.dash-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.25rem;
+  padding: 1.25rem; background: #fff; border: 1px solid #e5e5e5; border-radius: 8px;
+  text-decoration: none; color: inherit; transition: border-color .15s, box-shadow .15s;
+}
+.dash-card:hover { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,.08); }
+.dash-icon  { font-size: 1.5rem; line-height: 1; }
+.dash-label { font-weight: 600; font-size: 0.95rem; margin-top: 0.35rem; }
+.dash-sub   { font-size: 0.8rem; color: #888; }
+</style>
+{% endblock %}

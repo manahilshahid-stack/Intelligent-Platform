@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% block title %}Upload Document – Portfolio Intelligence{% endblock %}
+
+{% block breadcrumb %}
+<a href="/documents">Documents</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">Upload</span>
+{% endblock %}
+
+{% block body %}
+<div class="page-content narrow">
+
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start">
+    <h1>Upload document</h1>
+    <a href="/documents/upload/bulk" class="btn btn-secondary btn-sm">Bulk upload →</a>
+  </div>
+
+  <div class="card">
+    {% if error and not companies %}
+    <div class="alert alert-warn">{{ error }}</div>
+    {% else %}
+
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/documents/upload" enctype="multipart/form-data" novalidate id="upload-form">
+
+      {% if companies | length > 1 %}
+      <div class="field">
+        <label for="company_id">Company <span style="color:#dc2626">*</span></label>
+        <select id="company_id" name="company_id" required>
+          <option value="">Select a company…</option>
+          {% for c in companies %}
+          <option value="{{ c.id }}" {% if form.company_id == c.id %}selected{% endif %}>
+            {{ c.name }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <input type="hidden" name="company_id" value="{{ companies[0].id }}">
+      <div class="field">
+        <label>Company</label>
+        <div style="padding:0.6rem 0;font-weight:500;color:#374151">{{ companies[0].name }}</div>
+      </div>
+      {% endif %}
+
+      <div class="field">
+        <label for="document_category">Document category <span style="color:#dc2626">*</span></label>
+        <select id="document_category" name="document_category" onchange="onCategoryChange(this.value)" required>
+          <option value="other" {% if form.document_category == 'other' or not form.document_category %}selected{% endif %}>Other</option>
+          <option value="monthly_reporting" {% if form.document_category == 'monthly_reporting' %}selected{% endif %}>Monthly Reporting</option>
+          <option value="quarterly_reporting" {% if form.document_category == 'quarterly_reporting' %}selected{% endif %}>Quarterly Reporting</option>
+          <option value="board_deck" {% if form.document_category == 'board_deck' %}selected{% endif %}>Board Deck</option>
+          <option value="pitch" {% if form.document_category == 'pitch' %}selected{% endif %}>Pitch</option>
+          <option value="financing_deck" {% if form.document_category == 'financing_deck' %}selected{% endif %}>Financing Deck</option>
+          <option value="ic_memo" {% if form.document_category == 'ic_memo' %}selected{% endif %}>IC Memo</option>
+        </select>
+      </div>
+
+      {# ── Monthly period fields ── #}
+      <div id="monthly-fields" class="period-section" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+          <div class="field">
+            <label for="reporting_year_m">Year <span style="color:#dc2626">*</span></label>
+            <input id="reporting_year_m" name="reporting_year" type="number" min="2000" max="2100"
+                   placeholder="2024" value="{{ form.reporting_year or '' }}">
+          </div>
+          <div class="field">
+            <label for="reporting_month">Month <span style="color:#dc2626">*</span></label>
+            <select id="reporting_month" name="reporting_month">
+              <option value="">Select…</option>
+              {% for m, mn in [(1,'January'),(2,'February'),(3,'March'),(4,'April'),(5,'May'),(6,'June'),
+                               (7,'July'),(8,'August'),(9,'September'),(10,'October'),(11,'November'),(12,'December')] %}
+              <option value="{{ m }}" {% if form.reporting_month == m|string %}selected{% endif %}>{{ mn }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {# ── Quarterly period fields ── #}
+      <div id="quarterly-fields" class="period-section" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+          <div class="field">
+            <label for="reporting_year_q">Year <span style="color:#dc2626">*</span></label>
+            <input id="reporting_year_q" name="reporting_year" type="number" min="2000" max="2100"
+                   placeholder="2024" value="{{ form.reporting_year or '' }}">
+          </div>
+          <div class="field">
+            <label for="reporting_quarter">Quarter <span style="color:#dc2626">*</span></label>
+            <select id="reporting_quarter" name="reporting_quarter">
+              <option value="">Select…</option>
+              {% for q in [1,2,3,4] %}
+              <option value="{{ q }}" {% if form.reporting_quarter == q|string %}selected{% endif %}>Q{{ q }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="title">Document title <span style="color:#dc2626">*</span></label>
+        <input id="title" name="title" type="text"
+               placeholder="Q4 2024 Portfolio Report"
+               value="{{ form.title or '' }}"
+               required>
+      </div>
+
+      <div class="field">
+        <label for="file">File <span style="color:#dc2626">*</span></label>
+        <div class="file-drop" id="fileDrop">
+          <input id="file" name="file" type="file"
+                 accept=".pdf,.xlsx,.xlsm,.docx,.pptx,.txt"
+                 style="position:absolute;inset:0;opacity:0;cursor:pointer"
+                 onchange="onFileChange(this)">
+          <div id="fileLabel">
+            <div style="font-size:1.75rem;margin-bottom:0.5rem">📎</div>
+            <div style="font-weight:500;color:#374151">Click to choose or drag a file</div>
+            <div class="text-sm" style="margin-top:0.25rem">
+              Accepted: {% for ext in allowed %}.{{ ext }}{% if not loop.last %}, {% endif %}{% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-full" type="submit">Upload document</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+.file-drop {
+  position:relative;border:2px dashed #d1d5db;border-radius:8px;
+  padding:2rem;text-align:center;transition:border-color 0.15s;background:#fafafa;
+}
+.file-drop:hover,.file-drop.over { border-color:#4f46e5;background:#f5f3ff; }
+.period-section { margin-bottom: 0; }
+</style>
+<script>
+var initialCat = "{{ form.document_category or 'other' }}";
+
+function onCategoryChange(val) {
+  var showMonthly  = val === 'monthly_reporting';
+  var showQuarterly = val === 'quarterly_reporting';
+
+  var mEl = document.getElementById('monthly-fields');
+  var qEl = document.getElementById('quarterly-fields');
+
+  mEl.style.display  = showMonthly  ? '' : 'none';
+  qEl.style.display  = showQuarterly ? '' : 'none';
+
+  // Disable inputs in hidden sections so they are NOT submitted with the form
+  mEl.querySelectorAll('input, select').forEach(function(el) { el.disabled = !showMonthly; });
+  qEl.querySelectorAll('input, select').forEach(function(el) { el.disabled = !showQuarterly; });
+}
+
+// Run on load to restore state after a validation error
+onCategoryChange(initialCat);
+
+function onFileChange(input) {
+  var label = document.getElementById('fileLabel');
+  if (input.files && input.files[0]) {
+    var f = input.files[0];
+    label.innerHTML =
+      '<div style="font-size:1.5rem;margin-bottom:0.4rem">✅</div>' +
+      '<div style="font-weight:500;color:#374151">' + f.name + '</div>' +
+      '<div class="text-sm" style="margin-top:0.2rem">' + (f.size/1024).toFixed(1) + ' KB</div>';
+  }
+}
+var drop = document.getElementById('fileDrop');
+if (drop) {
+  drop.addEventListener('dragover', function(e) { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', function() { drop.classList.remove('over'); });
+  drop.addEventListener('drop', function(e) {
+    e.preventDefault(); drop.classList.remove('over');
+    var input = drop.querySelector('input[type=file]');
+    input.files = e.dataTransfer.files;
+    onFileChange(input);
+  });
+}
+</script>
+{% endblock %}

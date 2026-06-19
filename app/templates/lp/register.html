@@ -1,0 +1,45 @@
+{% extends "lp/base.html" %}
+
+{% block title %}Register as LP – Portfolio Intelligence{% endblock %}
+
+{% block body %}
+<div class="container">
+    <div class="logo">
+        <h1>Portfolio Intelligence</h1>
+        <p>Limited Partner Portal</p>
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/lp/register">
+        <div class="form-group">
+            <label for="name">Full Name *</label>
+            <input type="text" id="name" name="name" required placeholder="John Doe">
+        </div>
+
+        <div class="form-group">
+            <label for="email">Email Address *</label>
+            <input type="email" id="email" name="email" required placeholder="you@example.com">
+        </div>
+
+        <div class="form-group">
+            <label for="organization">Organization / Fund</label>
+            <input type="text" id="organization" name="organization" placeholder="Acme Ventures (optional)">
+        </div>
+
+        <div class="form-group">
+            <label for="password">Password *</label>
+            <input type="password" id="password" name="password" required placeholder="Min. 8 characters">
+            <small style="color: #999; margin-top: 0.25rem; display: block;">Must be at least 8 characters long.</small>
+        </div>
+
+        <button type="submit" style="width: 100%; padding: 0.875rem;">Create Account</button>
+    </form>
+
+    <div class="link">
+        Already have an account? <a href="/lp/login">Sign in here</a>
+    </div>
+</div>
+{% endblock %}

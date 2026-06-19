@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Review Queue – Portfolio Intelligence{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">Review queue</span>
+{% endblock %}
+
+{% block body %}
+<div class="page-content">
+
+  <div class="page-header">
+    <h1>Review Queue</h1>
+    <p class="subtitle">Extractions awaiting approval before they appear in chat.</p>
+  </div>
+
+  {% if not rows %}
+  <div class="card" style="text-align:center;padding:3rem 2rem">
+    <p style="font-size:1.05rem;margin-bottom:0.4rem;color:#374151">No extractions pending review.</p>
+    <p class="text-sm">Newly uploaded documents appear here after LLM extraction completes.</p>
+  </div>
+  {% else %}
+  <div class="card" style="padding:0;overflow:hidden">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Company</th>
+          <th>Document</th>
+          <th>Uploaded</th>
+          <th>Confidence</th>
+          <th>Missing fields</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td style="font-weight:500">{{ row.company.name if row.company else "—" }}</td>
+          <td>
+            {% if row.doc %}
+              <div style="font-weight:500">{{ row.doc.title }}</div>
+              <div class="text-sm text-muted" style="margin-top:0.1rem">{{ row.doc.filename }}</div>
+            {% else %}
+              <span class="text-muted">Deleted</span>
+            {% endif %}
+          </td>
+          <td class="text-sm text-muted" style="white-space:nowrap">
+            {% if row.doc %}{{ row.doc.created_at.strftime("%d %b %Y") }}{% else %}—{% endif %}
+          </td>
+          <td>
+            {% set conf = row.confidence %}
+            {% if conf == "high" %}
+              <span class="badge badge-success">High</span>
+            {% elif conf == "medium" %}
+              <span class="badge badge-warn">Medium</span>
+            {% elif conf == "low" %}
+              <span class="badge badge-error">Low</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-sm text-muted" style="max-width:200px">
+            {% if row.missing_fields %}
+              {{ row.missing_fields | join(", ") }}
+            {% else %}
+              <span style="color:#22c55e">None</span>
+            {% endif %}
+          </td>
+          <td style="text-align:right;white-space:nowrap">
+            <a href="/admin/review/{{ row.extraction.id }}" class="btn btn-primary btn-sm">
+              Review →
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

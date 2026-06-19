@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Admin – Portfolio Intelligence{% endblock %}
+
+{% block breadcrumb %}
+<span class="bc-current">Admin</span>
+{% endblock %}
+
+{% block body %}
+<div class="page-content">
+
+  <div class="page-header">
+    <h1>Admin</h1>
+    <p class="subtitle">Manage companies, users, and platform settings.</p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:1rem;margin-bottom:2rem">
+    <div class="card" style="padding:1.25rem">
+      <div style="font-size:2rem;font-weight:700;line-height:1">{{ companies|length }}</div>
+      <div class="text-sm" style="margin-top:0.25rem">Companies</div>
+    </div>
+    <div class="card" style="padding:1.25rem">
+      <div style="font-size:2rem;font-weight:700;line-height:1">{{ users|length }}</div>
+      <div class="text-sm" style="margin-top:0.25rem">Users</div>
+    </div>
+    <div class="card" style="padding:1.25rem">
+      <div style="font-size:2rem;font-weight:700;line-height:1">
+        {{ users|selectattr("role.value","eq","admin")|list|length }}
+      </div>
+      <div class="text-sm" style="margin-top:0.25rem">Admins</div>
+    </div>
+    {% if pending_reviews > 0 %}
+    <div class="card" style="padding:1.25rem;border-color:#fca5a5;background:#fef2f2">
+      <div style="font-size:2rem;font-weight:700;line-height:1;color:#dc2626">{{ pending_reviews }}</div>
+      <div class="text-sm" style="margin-top:0.25rem;color:#991b1b">Pending review</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Management</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.75rem">
+
+      <a href="/admin/companies" class="admin-link">
+        <div class="admin-link-icon">🏢</div>
+        <div>
+          <div style="font-weight:600">Companies</div>
+          <div class="text-sm">Create and manage portfolio companies</div>
+        </div>
+      </a>
+
+      <a href="/admin/users" class="admin-link">
+        <div class="admin-link-icon">👥</div>
+        <div>
+          <div style="font-weight:600">Users</div>
+          <div class="text-sm">Manage roles and company assignments</div>
+        </div>
+      </a>
+
+      <a href="/admin/review" class="admin-link">
+        <div class="admin-link-icon">🔍</div>
+        <div>
+          <div style="font-weight:600">Review queue
+            {% if pending_reviews > 0 %}
+            <span style="display:inline-block;background:#dc2626;color:#fff;border-radius:99px;
+                         font-size:0.7rem;font-weight:700;padding:0.1rem 0.45rem;
+                         vertical-align:middle;margin-left:0.3rem">{{ pending_reviews }}</span>
+            {% endif %}
+          </div>
+          <div class="text-sm">Approve or reject extracted data</div>
+        </div>
+      </a>
+
+      <a href="/documents" class="admin-link">
+        <div class="admin-link-icon">📄</div>
+        <div>
+          <div style="font-weight:600">Documents</div>
+          <div class="text-sm">Browse all uploaded documents</div>
+        </div>
+      </a>
+
+      <a href="/chat" class="admin-link">
+        <div class="admin-link-icon">💬</div>
+        <div>
+          <div style="font-weight:600">Chat</div>
+          <div class="text-sm">Query approved portfolio data</div>
+        </div>
+      </a>
+
+      <a href="/admin/settings" class="admin-link">
+        <div class="admin-link-icon">🔑</div>
+        <div>
+          <div style="font-weight:600">Settings</div>
+          <div class="text-sm">OpenRouter key and model</div>
+        </div>
+      </a>
+
+    </div>
+  </div>
+
+</div>
+
+<style>
+.admin-link {
+  display:flex; align-items:center; gap:0.75rem; padding:1rem;
+  border:1px solid #e5e5e5; border-radius:8px;
+  text-decoration:none; color:inherit;
+  transition:border-color 0.15s, box-shadow 0.15s;
+}
+.admin-link:hover { border-color:#4f46e5; box-shadow:0 0 0 3px rgba(79,70,229,0.08); }
+.admin-link-icon { font-size:1.5rem; flex-shrink:0; width:2.25rem; text-align:center; }
+</style>
+{% endblock %}

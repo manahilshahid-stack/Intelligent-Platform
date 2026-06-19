@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+{% block title %}Bulk Upload – Portfolio Intelligence{% endblock %}
+
+{% block breadcrumb %}
+<a href="/documents">Documents</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">Bulk Upload</span>
+{% endblock %}
+
+{% block head %}
+<style>
+#drop-zone {
+  border: 2px dashed #d1d5db;
+  border-radius: 10px;
+  padding: 3rem 2rem;
+  text-align: center;
+  background: #fafafa;
+  transition: border-color .15s, background .15s;
+  cursor: pointer;
+  position: relative;
+}
+#drop-zone.over, #drop-zone:hover { border-color: #4f46e5; background: #f5f3ff; }
+#drop-zone input[type=file] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+}
+
+.bulk-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; margin-top: 1.25rem; }
+.bulk-table th {
+  text-align: left; padding: 0.5rem 0.6rem;
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .05em; color: #6b7280; border-bottom: 1px solid #e5e5e5;
+  white-space: nowrap;
+}
+.bulk-table td { padding: 0.55rem 0.5rem; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+.bulk-table tr:last-child td { border-bottom: none; }
+.bulk-table input[type=text], .bulk-table input[type=number], .bulk-table select {
+  padding: 0.35rem 0.5rem; font-size: 0.82rem; width: 100%;
+  border: 1px solid #d1d5db; border-radius: 5px; font-family: inherit;
+}
+.bulk-table input:focus, .bulk-table select:focus {
+  outline: none; border-color: #4f46e5; box-shadow: 0 0 0 2px rgba(79,70,229,.1);
+}
+.period-cells { display: none; }
+.fname-cell { font-size: 0.82rem; color: #374151; font-weight: 500; word-break: break-all; }
+.remove-btn {
+  background: none; border: none; cursor: pointer; color: #9ca3af;
+  font-size: 1rem; padding: 0.2rem 0.4rem; border-radius: 4px;
+  transition: color .12s;
+}
+.remove-btn:hover { color: #dc2626; }
+
+/* Result rows */
+.result-ok  { background: #f0fdf4; }
+.result-err { background: #fef2f2; }
+.result-icon { font-weight: 700; }
+.result-ok  .result-icon { color: #166534; }
+.result-err .result-icon { color: #991b1b; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-content">
+
+  <div class="page-header">
+    <h1>Bulk upload</h1>
+    <p class="subtitle">Select multiple files, set title and category for each, then upload all at once.</p>
+  </div>
+
+  {% if error and not companies %}
+  <div class="alert alert-warn">{{ error }}</div>
+
+  {% elif results is not none %}
+  {# ── Results after submission ── #}
+  <div class="card" style="margin-bottom:1.5rem">
+    <h2>Upload results</h2>
+    {% set ok_count = results | selectattr('ok') | list | length %}
+    {% set err_count = results | rejectattr('ok') | list | length %}
+    <p class="text-sm" style="margin-bottom:1rem;color:{% if err_count %}#92400e{% else %}#166534{% endif %}">
+      {{ ok_count }} uploaded successfully{% if err_count %}, {{ err_count }} failed{% endif %}.
+    </p>
+    <table class="data-table">
+      <thead>
+        <tr><th>File</th><th>Title</th><th>Result</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for r in results %}
+        <tr class="{% if r.ok %}result-ok{% else %}result-err{% endif %}">
+          <td class="text-sm text-muted">{{ r.filename }}</td>
+          <td class="text-sm">{{ r.get('title','—') }}</td>
+          <td>
+            {% if r.ok %}
+            <span class="result-icon">✓</span> <span class="text-sm">Uploaded</span>
+            {% else %}
+            <span class="result-icon">✗</span> <span class="text-sm" style="color:#991b1b">{{ r.error }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.ok %}
+            <a href="/documents/{{ r.doc_id }}" class="btn btn-sm btn-ghost">View</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="display:flex;gap:0.75rem">
+    <a href="/documents/upload/bulk" class="btn btn-primary">Upload more</a>
+    <a href="/documents" class="btn btn-secondary">All documents</a>
+  </div>
+
+  {% else %}
+  {# ── Upload form ── #}
+
+  {% if error %}
+  <div class="alert alert-error">{{ error }}</div>
+  {% endif %}
+
+  <div class="card">
+
+    {# Company selector (only if multiple companies) #}
+    {% if companies | length > 1 %}
+    <div class="field" style="max-width:300px">
+      <label for="global_company">Default company <span style="color:#dc2626">*</span></label>
+      <select id="global_company">
+        <option value="">Select…</option>
+        {% for c in companies %}
+        <option value="{{ c.id }}">{{ c.name }}</option>
+        {% endfor %}
+      </select>
+      <div class="text-sm text-muted" style="margin-top:0.25rem">Applied to all rows unless overridden.</div>
+    </div>
+    {% else %}
+    <input type="hidden" id="global_company" value="{{ companies[0].id }}">
+    <div class="field">
+      <label>Company</label>
+      <div style="padding:.4rem 0;font-weight:500;color:#374151">{{ companies[0].name }}</div>
+    </div>
+    {% endif %}
+
+    {# Drop zone #}
+    <div id="drop-zone">
+      <input type="file" id="file-input" multiple
+             accept=".{% for ext in allowed %}{{ ext }}{% if not loop.last %},.{% endif %}{% endfor %}">
+      <div style="font-size:2rem;margin-bottom:.5rem">📎</div>
+      <div style="font-weight:600;color:#374151">Click to choose or drag files here</div>
+      <div class="text-sm text-muted" style="margin-top:.25rem">
+        Accepted: {% for ext in allowed %}.{{ ext }}{% if not loop.last %}, {% endif %}{% endfor %}
+      </div>
+    </div>
+
+    {# Per-file table — built by JS #}
+    <div id="file-table-wrap" style="display:none">
+      <form method="post" action="/documents/upload/bulk" enctype="multipart/form-data" id="bulk-form">
+        <input type="hidden" id="form_company_id" name="company_id" value="">
+        <div class="overflow-auto">
+          <table class="bulk-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th style="min-width:160px">Filename</th>
+                <th style="min-width:200px">Title <span style="color:#dc2626">*</span></th>
+                <th style="min-width:170px">Category <span style="color:#dc2626">*</span></th>
+                <th style="min-width:90px" id="year-head">Year</th>
+                <th style="min-width:110px" id="month-head">Month / Quarter</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="file-rows"></tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:.75rem;margin-top:1.25rem;align-items:center">
+          <button type="submit" class="btn btn-primary" id="submit-btn">
+            Upload all
+          </button>
+          <button type="button" class="btn btn-secondary" onclick="clearFiles()">Clear</button>
+          <span id="file-count-label" class="text-sm text-muted"></span>
+        </div>
+      </form>
+    </div>
+
+  </div>
+
+  {% endif %}
+
+</div>
+
+<script>
+var fileList = [];
+
+var MONTHS = ['','January','February','March','April','May','June',
+              'July','August','September','October','November','December'];
+
+function getCompanyId() {
+  return document.getElementById('global_company').value;
+}
+
+// Drop zone
+var dz = document.getElementById('drop-zone');
+var fi = document.getElementById('file-input');
+dz.addEventListener('dragover', function(e) { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', function() { dz.classList.remove('over'); });
+dz.addEventListener('drop', function(e) {
+  e.preventDefault(); dz.classList.remove('over');
+  addFiles(e.dataTransfer.files);
+});
+fi.addEventListener('change', function() { addFiles(fi.files); fi.value = ''; });
+
+function addFiles(newFiles) {
+  for (var i = 0; i < newFiles.length; i++) fileList.push(newFiles[i]);
+  renderTable();
+}
+
+function removeFile(idx) {
+  fileList.splice(idx, 1);
+  renderTable();
+}
+
+function clearFiles() {
+  fileList = [];
+  renderTable();
+}
+
+function renderTable() {
+  var tbody = document.getElementById('file-rows');
+  var wrap  = document.getElementById('file-table-wrap');
+  var label = document.getElementById('file-count-label');
+
+  if (fileList.length === 0) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  label.textContent = fileList.length + ' file' + (fileList.length === 1 ? '' : 's') + ' selected';
+
+  // Snapshot current category/year/period values before re-render so they survive
+  var saved = {};
+  fileList.forEach(function(_, i) {
+    var catEl  = document.querySelector('[name="document_category_' + i + '"]');
+    var yearEl = document.querySelector('[name="reporting_year_' + i + '"]');
+    var monEl  = document.querySelector('[name="reporting_month_' + i + '"]');
+    var qEl    = document.querySelector('[name="reporting_quarter_' + i + '"]');
+    var titleEl= document.querySelector('[name="title_' + i + '"]');
+    saved[i] = {
+      cat:     catEl   ? catEl.value   : 'other',
+      year:    yearEl  ? yearEl.value  : '',
+      month:   monEl   ? monEl.value   : '',
+      quarter: qEl     ? qEl.value     : '',
+      title:   titleEl ? titleEl.value : null,
+    };
+  });
+
+  tbody.innerHTML = '';
+  fileList.forEach(function(f, i) {
+    var s = saved[i] || {};
+    var defaultTitle = s.title !== null ? s.title
+      : f.name.replace(/\.[^.]+$/, '').replace(/[_\-]+/g, ' ');
+    var cat = s.cat || 'other';
+
+    var row = document.createElement('tr');
+    row.id = 'row-' + i;
+    row.innerHTML =
+      '<td style="color:#9ca3af;font-size:.8rem">' + (i+1) + '</td>' +
+      '<td class="fname-cell">' + escHtml(f.name) + '</td>' +
+      '<td><input type="text" id="title_' + i + '" name="title_' + i + '" value="' + escHtml(defaultTitle) + '" required></td>' +
+      '<td>' +
+        '<select name="document_category_' + i + '" onchange="onCatChange(this,' + i + ')">' +
+          opt('other','Other',cat) +
+          opt('monthly_reporting','Monthly Reporting',cat) +
+          opt('quarterly_reporting','Quarterly Reporting',cat) +
+          opt('board_deck','Board Deck',cat) +
+          opt('pitch','Pitch',cat) +
+          opt('financing_deck','Financing Deck',cat) +
+          opt('ic_memo','IC Memo',cat) +
+        '</select>' +
+      '</td>' +
+      '<td id="year-cell-' + i + '">' +
+        '<input type="number" name="reporting_year_' + i + '" min="2000" max="2100"' +
+        ' placeholder="' + new Date().getFullYear() + '" value="' + escHtml(s.year) + '">' +
+      '</td>' +
+      '<td id="period-cell-' + i + '"></td>' +
+      '<td><button type="button" class="remove-btn" onclick="removeFile(' + i + ')">✕</button></td>';
+    tbody.appendChild(row);
+
+    // Restore category-dependent fields
+    onCatChange(row.querySelector('select'), i, s.month || s.quarter, true);
+    if (s.month) {
+      var mel = document.querySelector('[name="reporting_month_' + i + '"]');
+      if (mel) mel.value = s.month;
+    }
+    if (s.quarter) {
+      var qel = document.querySelector('[name="reporting_quarter_' + i + '"]');
+      if (qel) qel.value = s.quarter;
+    }
+  });
+}
+
+function opt(val, label, selected) {
+  return '<option value="' + val + '"' + (selected === val ? ' selected' : '') + '>' + label + '</option>';
+}
+
+function onCatChange(sel, i, _savedPeriod, _quiet) {
+  var val = sel.value;
+  var yearCell   = document.getElementById('year-cell-' + i);
+  var periodCell = document.getElementById('period-cell-' + i);
+  var isMonthly  = val === 'monthly_reporting';
+  var isQuart    = val === 'quarterly_reporting';
+  var isReg      = isMonthly || isQuart;
+
+  yearCell.style.display   = isReg ? '' : 'none';
+  periodCell.style.display = isReg ? '' : 'none';
+  var yInp = yearCell.querySelector('input');
+  if (yInp) yInp.disabled = !isReg;
+
+  if (isMonthly) {
+    var html = '<select name="reporting_month_' + i + '"><option value="">Month…</option>';
+    for (var m = 1; m <= 12; m++) html += '<option value="' + m + '">' + MONTHS[m] + '</option>';
+    html += '</select>';
+    periodCell.innerHTML = html;
+  } else if (isQuart) {
+    periodCell.innerHTML =
+      '<select name="reporting_quarter_' + i + '">' +
+      '<option value="">Quarter…</option>' +
+      '<option value="1">Q1</option><option value="2">Q2</option>' +
+      '<option value="3">Q3</option><option value="4">Q4</option>' +
+      '</select>';
+  } else {
+    periodCell.innerHTML = '';
+  }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Submit via fetch + FormData built directly from fileList — avoids input.files assignment issues
+document.addEventListener('DOMContentLoaded', function() {
+  var form = document.getElementById('bulk-form');
+  if (!form) return;
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    var cid = getCompanyId();
+    if (!cid) { alert('Please select a company before uploading.'); return; }
+    if (fileList.length === 0) { alert('No files selected.'); return; }
+
+    var btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    btn.textContent = 'Uploading…';
+
+    // Build FormData from the form fields + actual File objects from fileList
+    var fd = new FormData();
+    fd.append('company_id', cid);
+
+    var ok = true;
+    for (var i = 0; i < fileList.length; i++) {
+      var titleEl = document.querySelector('[name="title_' + i + '"]');
+      var catEl   = document.querySelector('[name="document_category_' + i + '"]');
+      var yearEl  = document.querySelector('[name="reporting_year_' + i + '"]:not([disabled])');
+      var monEl   = document.querySelector('[name="reporting_month_' + i + '"]');
+      var qEl     = document.querySelector('[name="reporting_quarter_' + i + '"]');
+
+      fd.append('file_' + i, fileList[i], fileList[i].name);
+      fd.append('title_' + i, titleEl ? titleEl.value : '');
+      fd.append('document_category_' + i, catEl ? catEl.value : 'other');
+      fd.append('reporting_year_' + i,    yearEl  ? yearEl.value  : '');
+      fd.append('reporting_month_' + i,   monEl   ? monEl.value   : '');
+      fd.append('reporting_quarter_' + i, qEl     ? qEl.value     : '');
+    }
+
+    fetch('/documents/upload/bulk', { method: 'POST', body: fd })
+      .then(function(r) { return r.text(); })
+      .then(function(html) {
+        document.open(); document.write(html); document.close();
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Upload all';
+        alert('Upload failed: ' + err);
+      });
+  });
+});
+</script>
+{% endblock %}

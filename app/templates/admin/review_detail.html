@@ -1,0 +1,437 @@
+{% extends "base.html" %}
+{% block title %}Review: {{ doc.title }} – Portfolio Intelligence{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<a href="/admin/review">Review queue</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">{{ doc.title }}</span>
+{% endblock %}
+
+{% block head %}
+<style>
+.section-title {
+  font-size:0.7rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+  color:#888;margin:1.75rem 0 0.75rem;
+}
+.section-title:first-of-type { margin-top:0; }
+.field-group {
+  border:1px solid #e5e5e5;border-radius:6px;padding:1rem;margin-bottom:0.75rem;background:#fafafa;
+}
+.field-row { display:grid;gap:0.5rem; }
+.field-row.cols-2 { grid-template-columns:1fr 1fr; }
+.field-row.cols-3 { grid-template-columns:1fr 1fr 2fr; }
+.sub-label { font-size:0.72rem;color:#888;font-weight:500;margin-bottom:0.2rem;display:block; }
+.source-input { font-size:0.8rem;color:#666;font-style:italic; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-content full">
+
+  <div class="page-header">
+    <h1>Review Extraction</h1>
+    <p class="subtitle">{{ doc.title }}{% if company %} · {{ company.name }}{% endif %}</p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 300px;gap:1.5rem;align-items:start">
+
+    <!-- ── Left: editable fields ─────────────────────────────────────────── -->
+    <form method="post" action="/admin/review/{{ extraction.id }}/approve" id="review-form">
+
+      <div class="card">
+
+        <div class="section-title">Context</div>
+        <div class="field-row cols-2">
+          <div>
+            <label>Period</label>
+            <input type="text" name="period" value="{{ f(data, 'period') }}" placeholder="e.g. Q4 2024">
+          </div>
+          <div>
+            <label>Confidence</label>
+            <select name="confidence">
+              {% for opt in ["high","medium","low"] %}
+              <option value="{{ opt }}" {% if f(data,'confidence') == opt %}selected{% endif %}>
+                {{ opt.capitalize() }}
+              </option>
+              {% endfor %}
+              <option value="" {% if not f(data,'confidence') %}selected{% endif %}>— not set —</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="section-title">Business description</div>
+        <textarea name="business_description" rows="2"
+          placeholder="1-2 sentences: what the company does, who their customers are, business model…">{{ f(data,'business_description') }}</textarea>
+
+        {% set excl = excluded_standard_kpis if excluded_standard_kpis is defined else [] %}
+
+        {% if 'cash_position' not in excl %}
+        <div class="section-title">Cash position</div>
+        <div class="field-group">
+          <div class="field-row cols-3">
+            <div>
+              <span class="sub-label">Value</span>
+              <input type="number" step="any" name="cash_position_value"
+                     value="{{ f(data,'cash_position','value') }}" placeholder="e.g. 1500000">
+            </div>
+            <div>
+              <span class="sub-label">Currency</span>
+              <input type="text" name="cash_position_currency"
+                     value="{{ f(data,'cash_position','currency') }}" placeholder="EUR">
+            </div>
+            <div>
+              <span class="sub-label">Source text</span>
+              <input type="text" name="cash_position_source" class="source-input"
+                     value="{{ f(data,'cash_position','source_text') }}" placeholder="verbatim snippet…">
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if 'monthly_burn' not in excl %}
+        <div class="section-title">Monthly burn</div>
+        <div class="field-group">
+          <div class="field-row cols-3">
+            <div>
+              <span class="sub-label">Value</span>
+              <input type="number" step="any" name="monthly_burn_value"
+                     value="{{ f(data,'monthly_burn','value') }}" placeholder="e.g. 120000">
+            </div>
+            <div>
+              <span class="sub-label">Currency</span>
+              <input type="text" name="monthly_burn_currency"
+                     value="{{ f(data,'monthly_burn','currency') }}" placeholder="EUR">
+            </div>
+            <div>
+              <span class="sub-label">Source text</span>
+              <input type="text" name="monthly_burn_source" class="source-input"
+                     value="{{ f(data,'monthly_burn','source_text') }}" placeholder="verbatim snippet…">
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if 'runway_months' not in excl %}
+        <div class="section-title">Runway</div>
+        <div class="field-group">
+          <div class="field-row cols-2">
+            <div>
+              <span class="sub-label">Months</span>
+              <input type="number" step="any" name="runway_months_value"
+                     value="{{ f(data,'runway_months','value') }}" placeholder="e.g. 14">
+            </div>
+            <div>
+              <span class="sub-label">Source text</span>
+              <input type="text" name="runway_months_source" class="source-input"
+                     value="{{ f(data,'runway_months','source_text') }}" placeholder="verbatim snippet…">
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if 'revenue' not in excl %}
+        <div class="section-title">Revenue</div>
+        <div class="field-group">
+          <div class="field-row" style="grid-template-columns:1fr 1fr 1fr">
+            <div>
+              <span class="sub-label">Value</span>
+              <input type="number" step="any" name="revenue_value"
+                     value="{{ f(data,'revenue','value') }}" placeholder="e.g. 80000">
+            </div>
+            <div>
+              <span class="sub-label">Currency</span>
+              <input type="text" name="revenue_currency"
+                     value="{{ f(data,'revenue','currency') }}" placeholder="EUR">
+            </div>
+            <div>
+              <span class="sub-label">Period</span>
+              <input type="text" name="revenue_period"
+                     value="{{ f(data,'revenue','period') }}" placeholder="e.g. MRR, Q4 2024">
+            </div>
+          </div>
+          <div style="margin-top:0.5rem">
+            <span class="sub-label">Source text</span>
+            <input type="text" name="revenue_source" class="source-input"
+                   value="{{ f(data,'revenue','source_text') }}" placeholder="verbatim snippet…">
+          </div>
+        </div>
+        {% endif %}
+
+        {% if 'arr' not in excl %}
+        <div class="section-title">ARR</div>
+        <div class="field-group">
+          <div class="field-row cols-3">
+            <div>
+              <span class="sub-label">Value</span>
+              <input type="number" step="any" name="arr_value"
+                     value="{{ f(data,'arr','value') }}" placeholder="e.g. 960000">
+            </div>
+            <div>
+              <span class="sub-label">Currency</span>
+              <input type="text" name="arr_currency"
+                     value="{{ f(data,'arr','currency') }}" placeholder="EUR">
+            </div>
+            <div>
+              <span class="sub-label">Source text</span>
+              <input type="text" name="arr_source" class="source-input"
+                     value="{{ f(data,'arr','source_text') }}" placeholder="verbatim snippet…">
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="section-title">MRR</div>
+        <div class="field-group">
+          <div class="field-row cols-3">
+            <div>
+              <span class="sub-label">Value</span>
+              <input type="number" step="any" name="mrr_value"
+                     value="{{ f(data,'mrr','value') }}" placeholder="e.g. 80000">
+            </div>
+            <div>
+              <span class="sub-label">Currency</span>
+              <input type="text" name="mrr_currency"
+                     value="{{ f(data,'mrr','currency') }}" placeholder="EUR">
+            </div>
+            <div>
+              <span class="sub-label">Source text</span>
+              <input type="text" name="mrr_source" class="source-input"
+                     value="{{ f(data,'mrr','source_text') }}" placeholder="verbatim snippet…">
+            </div>
+          </div>
+        </div>
+
+        <div class="section-title">Gross margin</div>
+        <div class="field-group">
+          <div class="field-row cols-2">
+            <div>
+              <span class="sub-label">Value (%)</span>
+              <input type="number" step="any" name="gross_margin_value"
+                     value="{{ f(data,'gross_margin','value') }}" placeholder="e.g. 72.5">
+            </div>
+            <div>
+              <span class="sub-label">Source text</span>
+              <input type="text" name="gross_margin_source" class="source-input"
+                     value="{{ f(data,'gross_margin','source_text') }}" placeholder="verbatim snippet…">
+            </div>
+          </div>
+        </div>
+
+        <div class="section-title">Growth metrics</div>
+        <div class="field-group">
+          <div class="field-row" style="grid-template-columns:1fr 1fr 2fr">
+            <div>
+              <span class="sub-label">MoM growth (%)</span>
+              <input type="number" step="any" name="mom_growth_pct"
+                     value="{{ f(data,'growth_metrics','mom_growth_pct') }}" placeholder="e.g. 12.5">
+            </div>
+            <div>
+              <span class="sub-label">YoY growth (%)</span>
+              <input type="number" step="any" name="yoy_growth_pct"
+                     value="{{ f(data,'growth_metrics','yoy_growth_pct') }}" placeholder="e.g. 180">
+            </div>
+            <div>
+              <span class="sub-label">Description (if non-standard)</span>
+              <input type="text" name="growth_description"
+                     value="{{ f(data,'growth_metrics','description') }}" placeholder="e.g. 3x YoY from €200k to €600k ARR">
+            </div>
+          </div>
+          <div style="margin-top:0.5rem">
+            <span class="sub-label">Source text</span>
+            <input type="text" name="growth_source" class="source-input"
+                   value="{{ f(data,'growth_metrics','source_text') }}" placeholder="verbatim snippet…">
+          </div>
+        </div>
+
+        {% if 'headcount' not in excl %}
+        <div class="section-title">Headcount</div>
+        <div class="field-group">
+          <div class="field-row cols-2">
+            <div>
+              <span class="sub-label">Value</span>
+              <input type="number" step="1" name="headcount_value"
+                     value="{{ f(data,'headcount','value') }}" placeholder="e.g. 24">
+            </div>
+            <div>
+              <span class="sub-label">Source text</span>
+              <input type="text" name="headcount_source" class="source-input"
+                     value="{{ f(data,'headcount','source_text') }}" placeholder="verbatim snippet…">
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if 'customers' not in excl %}
+        <div class="section-title">Customers</div>
+        <div class="field-group">
+          <div class="field-row cols-2">
+            <div>
+              <span class="sub-label">Value</span>
+              <input type="number" step="1" name="customers_value"
+                     value="{{ f(data,'customers','value') }}" placeholder="e.g. 37">
+            </div>
+            <div>
+              <span class="sub-label">Source text</span>
+              <input type="text" name="customers_source" class="source-input"
+                     value="{{ f(data,'customers','source_text') }}" placeholder="verbatim snippet…">
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="section-title">Key wins</div>
+        <textarea name="key_wins" rows="4" placeholder="One item per line…">{{ lf(data,'key_wins') }}</textarea>
+
+        <div class="section-title">Key challenges</div>
+        <textarea name="key_challenges" rows="4" placeholder="One item per line…">{{ lf(data,'key_challenges') }}</textarea>
+
+        <div class="section-title">Risks</div>
+        <textarea name="risks" rows="4" placeholder="One item per line…">{{ lf(data,'risks') }}</textarea>
+
+        <div class="section-title">Asks</div>
+        <textarea name="asks" rows="3" placeholder="One item per line…">{{ lf(data,'asks') }}</textarea>
+
+        <div class="section-title">Next milestones</div>
+        <textarea name="next_milestones" rows="3"
+          placeholder="One item per line — upcoming targets and goals…">{{ lf(data,'next_milestones') }}</textarea>
+
+        <div class="section-title">Summary</div>
+        <textarea name="summary" rows="5" placeholder="2–4 sentence overview…">{{ f(data,'summary') }}</textarea>
+
+        <div class="section-title">Missing fields</div>
+        <textarea name="missing_fields" rows="3"
+          placeholder="One field name per line…">{{ lf(data,'missing_fields') }}</textarea>
+
+        {# ── Custom KPIs ── #}
+        {% if kpi_fields %}
+        <div class="section-title" style="color:#4f46e5">Custom KPIs</div>
+        {% set ckpis = data.get('custom_kpis') or {} %}
+        {% for kf in kpi_fields %}
+        {% set fk = kf.field_key %}
+        {% set entry = ckpis.get(fk) or {} %}
+        <div class="field-group">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.5rem">
+            <strong style="font-size:0.85rem">{{ kf.field_label }}</strong>
+            <span style="font-size:0.7rem;color:#888">
+              <code>{{ fk }}</code> · {{ kf.field_type.value }}
+              {% if kf.is_required %}<span style="color:#dc2626"> required</span>{% endif %}
+            </span>
+          </div>
+          {% if kf.description %}
+          <div class="text-sm text-muted" style="margin-bottom:0.5rem;font-style:italic">{{ kf.description }}</div>
+          {% endif %}
+          <div class="field-row cols-3">
+            <div>
+              <span class="sub-label">Value</span>
+              <input type="text" name="ckpi_{{ fk }}_value"
+                     value="{{ entry.get('value') if entry.get('value') is not none else '' }}"
+                     placeholder="{% if kf.extraction_hint %}{{ kf.extraction_hint[:50] }}{% else %}extracted value{% endif %}">
+            </div>
+            <div>
+              <span class="sub-label">Confidence</span>
+              <select name="ckpi_{{ fk }}_confidence">
+                {% for opt in ["high","medium","low"] %}
+                <option value="{{ opt }}"
+                  {% if entry.get('confidence') == opt %}selected
+                  {% elif not entry.get('confidence') and opt == 'medium' %}selected{% endif %}>
+                  {{ opt.capitalize() }}
+                </option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <span class="sub-label">Source text</span>
+              <input type="text" class="source-input" name="ckpi_{{ fk }}_source"
+                     value="{{ entry.get('source_text') or '' }}"
+                     placeholder="verbatim snippet…">
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+        {% endif %}
+
+        <input type="hidden" name="company_name" value="{{ f(data,'company_name') }}">
+        <input type="hidden" name="document_title" value="{{ f(data,'document_title') }}">
+
+        <div style="display:flex;gap:0.75rem;margin-top:1.5rem">
+          <button type="submit" class="btn btn-primary"
+                  onclick="this.disabled=true;this.textContent='Approving…';this.form.submit()">
+            Approve &amp; embed
+          </button>
+          <a href="/admin/review" class="btn btn-secondary">Cancel</a>
+        </div>
+
+      </div>
+    </form>
+
+    <!-- ── Right panel ────────────────────────────────────────────────────── -->
+    <div style="display:flex;flex-direction:column;gap:1rem">
+
+      <div class="card">
+        <h2>Document</h2>
+        <div class="meta-grid">
+          <span class="label">Title</span>
+          <span>{{ doc.title }}</span>
+
+          <span class="label">Company</span>
+          <span>{{ company.name if company else "—" }}</span>
+
+          <span class="label">File</span>
+          <span class="text-sm text-muted" style="word-break:break-all">{{ doc.filename }}</span>
+
+          <span class="label">Uploaded</span>
+          <span class="text-sm text-muted">{{ doc.created_at.strftime("%d %b %Y, %H:%M") }}</span>
+
+          <span class="label">Extracted</span>
+          <span class="text-sm text-muted">{{ extraction.created_at.strftime("%d %b %Y, %H:%M") }}</span>
+        </div>
+        <div style="margin-top:1rem">
+          <a href="/documents/{{ doc.id }}" class="text-sm" style="color:#4f46e5">View document →</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Reject</h2>
+        <p class="text-sm" style="margin-bottom:1rem">
+          Reject if the extraction is unusable. The document stays on record but will not appear in chat.
+        </p>
+        <form method="post" action="/admin/review/{{ extraction.id }}/reject">
+          <button type="submit" class="btn btn-danger" style="width:100%"
+                  onclick="return confirm('Reject this extraction?')">
+            Reject extraction
+          </button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Raw extracted JSON</h2>
+        <pre style="font-size:0.75rem;white-space:pre-wrap;word-break:break-all;
+             color:#555;background:#f5f5f5;padding:0.75rem;border-radius:5px;
+             border:1px solid #e5e5e5;max-height:340px;overflow-y:auto;
+             margin-top:0.5rem;line-height:1.5">{{ raw_json }}</pre>
+      </div>
+
+      {% if extraction.error %}
+      <div class="card">
+        <h2 style="color:#991b1b">LLM error</h2>
+        <pre class="text-sm" style="white-space:pre-wrap;word-break:break-all;color:#666">{{ extraction.error[:500] }}</pre>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+
+  {% if doc.raw_text %}
+  <div class="card" style="margin-top:1.5rem">
+    <h2>Extracted text</h2>
+    <div style="white-space:pre-wrap;font-family:monospace;font-size:0.82rem;
+                line-height:1.6;color:#374151;background:#fafafa;padding:1rem;
+                border-radius:6px;border:1px solid #e5e5e5;max-height:40vh;overflow-y:auto;
+                margin-top:0.5rem">{{ doc.raw_text }}</div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

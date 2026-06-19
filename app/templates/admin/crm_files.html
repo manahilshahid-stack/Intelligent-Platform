@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}CRM Files – Admin{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<a href="/admin/crm/ventures">CRM Ventures</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">Files</span>
+{% endblock %}
+
+{% block topbar_actions %}
+<form method="post" action="/admin/crm/files/sync" style="display:inline">
+  <button type="submit" class="btn btn-primary btn-sm"
+          onclick="this.disabled=true;this.textContent='Syncing…';this.form.submit()">
+    Sync files
+  </button>
+</form>
+<form method="post" action="/admin/crm/files/reindex" style="display:inline">
+  <button type="submit" class="btn btn-secondary btn-sm"
+          onclick="this.disabled=true;this.textContent='Indexing…';this.form.submit()">
+    Re-index files
+  </button>
+</form>
+{% endblock %}
+
+{% block body %}
+<div class="page-content full">
+
+  <div class="page-header">
+    <h1>CRM Files</h1>
+    <p class="subtitle">Documents attached to Attio ventures, downloaded and indexed for chat.</p>
+  </div>
+
+  {# ── Filters ── #}
+  <form method="get" action="/admin/crm/files" style="margin-bottom:1.25rem">
+    <div style="display:flex;flex-wrap:wrap;gap:0.6rem;align-items:flex-end">
+
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.25rem">Search</label>
+        <input type="text" name="q" value="{{ filter_q }}"
+               placeholder="Filename…"
+               style="min-width:200px;padding:0.45rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+      </div>
+
+      {% if all_ventures %}
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.25rem">Venture</label>
+        <select name="venture_id" style="min-width:160px;padding:0.45rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+          <option value="">All ventures</option>
+          {% for v in all_ventures %}
+          <option value="{{ v.id }}" {% if filter_venture_id == v.id %}selected{% endif %}>{{ v.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      {% if all_types %}
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.25rem">Type</label>
+        <select name="file_type" style="min-width:100px;padding:0.45rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+          <option value="">All types</option>
+          {% for t in all_types %}
+          <option value="{{ t }}" {% if filter_file_type == t %}selected{% endif %}>{{ t.upper() }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      {% if all_statuses %}
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.25rem">Status</label>
+        <select name="status" style="min-width:140px;padding:0.45rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+          <option value="">All statuses</option>
+          {% for s in all_statuses %}
+          <option value="{{ s }}" {% if filter_status == s %}selected{% endif %}>{{ s.replace('_',' ').title() }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      <button class="btn btn-secondary btn-sm" type="submit">Filter</button>
+      {% if filter_q or filter_venture_id or filter_file_type or filter_status %}
+      <a href="/admin/crm/files" class="btn btn-ghost btn-sm">Clear</a>
+      {% endif %}
+    </div>
+  </form>
+
+  {# ── Table ── #}
+  <div class="card" style="padding:0">
+    {% if files %}
+    <div class="overflow-auto">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Filename</th>
+            <th>Venture</th>
+            <th>Type</th>
+            <th>Size</th>
+            <th>Status</th>
+            <th>Synced</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in files %}
+          <tr>
+            <td style="font-weight:500;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              {{ f.filename or "—" }}
+              {% if f.raw_text %}
+              <div class="text-sm text-muted" style="margin-top:0.1rem;white-space:normal">
+                {{ f.raw_text[:100] | replace('\n', ' ') }}…
+              </div>
+              {% endif %}
+            </td>
+            <td class="text-sm text-muted">
+              {% if f.crm_venture %}
+              <a href="/admin/crm/ventures/{{ f.crm_venture_id }}" style="color:#4f46e5">{{ f.crm_venture.name }}</a>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if f.file_type %}<span class="badge badge-neutral" style="font-size:0.7rem">{{ f.file_type.upper() }}</span>{% else %}—{% endif %}
+            </td>
+            <td class="text-sm text-muted">
+              {% if f.file_size %}
+                {% if f.file_size > 1048576 %}{{ "%.1f"|format(f.file_size/1048576) }} MB
+                {% elif f.file_size > 1024 %}{{ "%.0f"|format(f.file_size/1024) }} KB
+                {% else %}{{ f.file_size }} B{% endif %}
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if f.extraction_status %}
+                {% set s = f.extraction_status.value %}
+                {% if s == 'text_extracted' %}
+                  <span class="badge badge-success" style="font-size:0.7rem">Extracted</span>
+                {% elif s == 'unsupported' %}
+                  <span class="badge badge-neutral" style="font-size:0.7rem">Unsupported</span>
+                {% elif s == 'failed' %}
+                  <span class="badge badge-error" style="font-size:0.7rem">Failed</span>
+                {% else %}
+                  <span class="badge badge-neutral" style="font-size:0.7rem">{{ s }}</span>
+                {% endif %}
+              {% else %}—{% endif %}
+            </td>
+            <td class="text-sm text-muted" style="white-space:nowrap">
+              {% if f.synced_at %}{{ f.synced_at.strftime('%d %b %Y') }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="padding:0.75rem 1rem;border-top:1px solid #f0f0f0;font-size:0.8rem;color:#9ca3af">
+      Showing {{ files | length }} of {{ total }} files
+    </div>
+    {% else %}
+    <div style="padding:3rem;text-align:center;color:#9ca3af">
+      <div style="font-size:2.5rem;margin-bottom:0.75rem">📎</div>
+      {% if filter_q or filter_venture_id or filter_file_type or filter_status %}
+      <p>No files match your filters.</p>
+      <a href="/admin/crm/files" class="btn btn-secondary btn-sm" style="margin-top:0.75rem">Clear filters</a>
+      {% else %}
+      <p>No files synced yet.</p>
+      <form method="post" action="/admin/crm/files/sync" style="margin-top:1rem">
+        <button type="submit" class="btn btn-primary">Sync files from Attio</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

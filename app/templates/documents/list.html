@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Documents – Portfolio Intelligence{% endblock %}
+
+{% block breadcrumb %}
+<span class="bc-current">Documents</span>
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="/documents/upload/bulk" class="btn btn-secondary btn-sm">Bulk upload</a>
+<a href="/documents/upload" class="btn btn-primary btn-sm">+ Upload</a>
+{% endblock %}
+
+{% block body %}
+<div class="page-content">
+
+  <div class="page-header">
+    <h1>Documents</h1>
+    <p class="subtitle">
+      {% if user.role.value == "admin" %}All uploaded documents{% else %}Documents for your company{% endif %}
+    </p>
+  </div>
+
+  <div class="card" style="padding:0;overflow:hidden">
+    {% if docs %}
+    <div class="overflow-auto">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Company</th>
+          <th>File</th>
+          <th>Size</th>
+          <th>Extraction</th>
+          <th>Review</th>
+          <th>Uploaded</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for doc in docs %}
+        {% set company = company_map.get(doc.company_id) %}
+        <tr>
+          <td>
+            <a href="/documents/{{ doc.id }}" style="font-weight:500;color:#4f46e5">
+              {{ doc.title }}
+            </a>
+          </td>
+          <td class="text-sm">{{ company.name if company else "—" }}</td>
+          <td>
+            <span class="ext-badge ext-{{ doc.file_type }}">{{ doc.file_type.upper() }}</span>
+            <span class="text-sm" style="margin-left:0.3rem">{{ doc.filename }}</span>
+          </td>
+          <td class="text-sm text-muted" style="white-space:nowrap">
+            {{ readable_size(doc.file_size) if doc.file_size else "—" }}
+          </td>
+          <td>{{ doc.extraction_status.value | status_badge | safe }}</td>
+          <td>{{ doc.review_status.value | status_badge | safe }}</td>
+          <td class="text-sm text-muted" style="white-space:nowrap">
+            {{ doc.created_at.strftime("%d %b %Y") }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div style="padding:3rem;text-align:center;color:#9ca3af">
+      <div style="font-size:2.5rem;margin-bottom:0.75rem">📄</div>
+      <p>No documents yet.</p>
+      <a href="/documents/upload" class="btn btn-primary" style="margin-top:1rem">Upload first document</a>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

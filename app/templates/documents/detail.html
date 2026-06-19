@@ -1,0 +1,531 @@
+{% extends "base.html" %}
+{% block title %}{{ doc.title }} – Portfolio Intelligence{% endblock %}
+
+{% block breadcrumb %}
+<a href="/documents">Documents</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">{{ doc.title }}</span>
+{% endblock %}
+
+{% block head %}
+<style>
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 1.5rem;
+  align-items: start;
+}
+@media (max-width: 700px) {
+  .detail-grid { grid-template-columns: 1fr; }
+}
+
+/* Status pill row */
+.status-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+
+/* Section label inside cards */
+.card-section {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #f0f0f0;
+}
+.card-section:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+
+/* Actions */
+.action-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* JSON viewer */
+.json-block {
+  font-family: monospace;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #f8f8f8;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  padding: 0.85rem;
+  max-height: 380px;
+  overflow-y: auto;
+  color: #374151;
+  line-height: 1.55;
+  margin-top: 0.5rem;
+}
+
+/* Text preview */
+.text-block {
+  font-family: monospace;
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fafafa;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  padding: 1rem;
+  max-height: 55vh;
+  overflow-y: auto;
+  color: #374151;
+  line-height: 1.6;
+  margin-top: 0.5rem;
+}
+
+/* Lifecycle steps */
+.lifecycle {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 0.25rem;
+}
+.lc-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.55rem 0;
+  font-size: 0.85rem;
+  position: relative;
+}
+.lc-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 34px;
+  width: 2px;
+  height: calc(100% - 14px);
+  background: #e5e5e5;
+}
+.lc-dot {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-top: 1px;
+  z-index: 1;
+}
+.lc-dot.done    { background: #dcfce7; color: #166534; }
+.lc-dot.active  { background: #dbeafe; color: #1e40af; }
+.lc-dot.warn    { background: #fef3c7; color: #92400e; }
+.lc-dot.error   { background: #fee2e2; color: #991b1b; }
+.lc-dot.pending { background: #f3f4f6; color: #9ca3af; }
+.lc-label { font-weight: 500; }
+.lc-sub   { font-size: 0.78rem; color: #888; margin-top: 0.1rem; }
+
+/* Ext badge */
+.ext-badge {
+  display: inline-block; padding: 0.15rem 0.45rem;
+  border-radius: 4px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em;
+}
+.ext-pdf  { background:#fee2e2; color:#991b1b }
+.ext-xlsx,.ext-xlsm { background:#dcfce7; color:#166534 }
+.ext-docx { background:#dbeafe; color:#1e40af }
+.ext-pptx { background:#fef3c7; color:#92400e }
+.ext-txt  { background:#f3f4f6; color:#374151 }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="page-content full">
+
+  <div class="page-header">
+    <h1>{{ doc.title }}</h1>
+  </div>
+  <div class="status-row">
+    {{ doc.upload_status.value     | status_badge | safe }}
+    {{ doc.extraction_status.value | status_badge | safe }}
+    {{ doc.review_status.value     | status_badge | safe }}
+  </div>
+
+  <div class="detail-grid">
+
+    {# ── Left column ────────────────────────────────────────────────────────── #}
+    <div style="display:flex;flex-direction:column;gap:1.5rem">
+
+      {# ── Lifecycle card ── #}
+      <div class="card">
+        <h2>Lifecycle</h2>
+        {% set es = doc.extraction_status.value %}
+        {% set rs = doc.review_status.value %}
+
+        <div class="lifecycle">
+
+          {# Step 1: Upload #}
+          <div class="lc-step">
+            <div class="lc-dot done">✓</div>
+            <div>
+              <div class="lc-label">Uploaded</div>
+              <div class="lc-sub">{{ doc.created_at.strftime("%d %b %Y, %H:%M") }}
+                {% if uploader %} by {{ uploader.name or uploader.email }}{% endif %}
+              </div>
+            </div>
+          </div>
+
+          {# Step 2: Text extraction #}
+          {% if es in ("complete","extracted","no_api_key","failed") %}
+          <div class="lc-step">
+            <div class="lc-dot {% if es == 'failed' %}error{% elif es == 'no_api_key' %}warn{% else %}done{% endif %}">
+              {% if es == 'failed' %}✗{% elif es == 'no_api_key' %}!{% else %}✓{% endif %}
+            </div>
+            <div>
+              <div class="lc-label">Text extracted</div>
+              {% if doc.raw_text %}
+                <div class="lc-sub">{{ doc.raw_text|length|int }} characters</div>
+              {% elif es == 'no_api_key' %}
+                <div class="lc-sub" style="color:#92400e">Text OK — API key missing</div>
+              {% elif es == 'failed' and doc.extraction_error %}
+                <div class="lc-sub" style="color:#991b1b">{{ doc.extraction_error[:120] }}</div>
+              {% endif %}
+            </div>
+          </div>
+          {% else %}
+          <div class="lc-step">
+            <div class="lc-dot pending">…</div>
+            <div><div class="lc-label">Text extraction pending</div></div>
+          </div>
+          {% endif %}
+
+          {# Step 3: LLM extraction #}
+          {% if extraction %}
+          <div class="lc-step">
+            <div class="lc-dot {% if extraction.error %}error{% elif es == 'extracted' or es == 'complete' and rs != 'pending' %}done{% else %}active{% endif %}">
+              {% if extraction.error %}✗{% else %}✓{% endif %}
+            </div>
+            <div>
+              <div class="lc-label">LLM extraction</div>
+              <div class="lc-sub">{{ extraction.created_at.strftime("%d %b %Y, %H:%M") }}</div>
+              {% if extraction.error %}
+                <div class="lc-sub" style="color:#991b1b">{{ extraction.error[:120] }}</div>
+              {% endif %}
+            </div>
+          </div>
+          {% elif es == 'no_api_key' %}
+          <div class="lc-step">
+            <div class="lc-dot warn">!</div>
+            <div>
+              <div class="lc-label">LLM extraction — API key required</div>
+              {% if user.role.value == "admin" %}
+                <div class="lc-sub">
+                  <a href="/admin/settings" style="color:#4f46e5">Configure OpenRouter key →</a>
+                </div>
+              {% endif %}
+            </div>
+          </div>
+          {% else %}
+          <div class="lc-step">
+            <div class="lc-dot pending">…</div>
+            <div><div class="lc-label">LLM extraction — not yet run</div></div>
+          </div>
+          {% endif %}
+
+          {# Step 4: Review #}
+          {% if rs == "approved" %}
+          <div class="lc-step">
+            <div class="lc-dot done">✓</div>
+            <div>
+              <div class="lc-label">Approved</div>
+              {% if reviewed_by %}
+                <div class="lc-sub">by {{ reviewed_by.name or reviewed_by.email }}
+                  {% if extraction and extraction.reviewed_at %}
+                    · {{ extraction.reviewed_at.strftime("%d %b %Y") }}
+                  {% endif %}
+                </div>
+              {% endif %}
+            </div>
+          </div>
+          {% elif rs == "rejected" %}
+          <div class="lc-step">
+            <div class="lc-dot error">✗</div>
+            <div>
+              <div class="lc-label">Rejected</div>
+              {% if reviewed_by %}
+                <div class="lc-sub">by {{ reviewed_by.name or reviewed_by.email }}</div>
+              {% endif %}
+            </div>
+          </div>
+          {% elif es == "extracted" %}
+          <div class="lc-step">
+            <div class="lc-dot active">→</div>
+            <div><div class="lc-label">Pending review</div></div>
+          </div>
+          {% else %}
+          <div class="lc-step">
+            <div class="lc-dot pending">…</div>
+            <div><div class="lc-label">Review — waiting for extraction</div></div>
+          </div>
+          {% endif %}
+
+          {# Step 5: Embedded #}
+          {% if chunk_count > 0 %}
+          <div class="lc-step">
+            <div class="lc-dot done">✓</div>
+            <div>
+              <div class="lc-label">Embedded &amp; searchable</div>
+              <div class="lc-sub">{{ chunk_count }} approved chunk{{ "s" if chunk_count != 1 }}</div>
+            </div>
+          </div>
+          {% elif rs == "approved" %}
+          <div class="lc-step">
+            <div class="lc-dot warn">!</div>
+            <div><div class="lc-label">Not yet embedded</div></div>
+          </div>
+          {% else %}
+          <div class="lc-step">
+            <div class="lc-dot pending">…</div>
+            <div><div class="lc-label">Embedding — after approval</div></div>
+          </div>
+          {% endif %}
+
+        </div>
+      </div>
+
+      {# ── Raw text preview — everyone with access ── #}
+      {% if doc.raw_text %}
+      <div class="card">
+        <h2>Extracted text</h2>
+        <div class="text-block">{{ doc.raw_text }}</div>
+      </div>
+      {% endif %}
+
+      {# ── JSON details — admin only ── #}
+      {% if user.role.value == "admin" and extraction %}
+
+        {% if extraction.corrected_json %}
+        <div class="card">
+          <h2>Approved JSON</h2>
+          <div class="json-block">{{ extraction.corrected_json }}</div>
+        </div>
+        {% elif extraction.extracted_json %}
+        <div class="card">
+          <h2>Raw extracted JSON <span style="font-size:0.78rem;font-weight:400;color:#999">(not yet reviewed)</span></h2>
+          <div class="json-block">{{ extraction.extracted_json }}</div>
+        </div>
+        {% endif %}
+
+        {% if extraction.error %}
+        <div class="card">
+          <h2 style="color:#991b1b">LLM error</h2>
+          <div class="json-block" style="background:#fef2f2;border-color:#fecaca;color:#991b1b">{{ extraction.error }}</div>
+        </div>
+        {% endif %}
+
+      {% endif %}
+
+      {# ── Approved summary + custom KPIs — shown to users once approved ── #}
+      {% if user.role.value != "admin" and doc.review_status.value == "approved" and extraction and extraction.corrected_json %}
+        {% set cj = extraction.corrected_json | fromjson %}
+        {% if cj %}
+
+        {% if cj.get("summary") %}
+        <div class="card">
+          <h2>Summary</h2>
+          <p style="font-size:0.9rem;line-height:1.7;color:#374151;margin-top:0.25rem">{{ cj.summary }}</p>
+        </div>
+        {% endif %}
+
+        {% if cj.get("custom_kpis") %}
+        {% set ckpis = cj.custom_kpis %}
+        {% set visible = ckpis.items() | selectattr('1') | list %}
+        {% if visible %}
+        <div class="card">
+          <h2>Custom KPIs</h2>
+          <div class="meta-grid" style="margin-top:0.5rem">
+            {% for fk, entry in ckpis.items() %}
+            {% if entry and entry.get('value') is not none %}
+            <span class="label">{{ entry.get('label') or fk }}</span>
+            <span>
+              {{ entry.value }}
+              {% if entry.get('confidence') == 'low' %}
+              <span class="text-muted text-sm">(low confidence)</span>
+              {% endif %}
+            </span>
+            {% endif %}
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        {% endif %}
+
+        {% endif %}
+      {% endif %}
+
+      {# ── Admin: approved custom KPIs alongside JSON block ── #}
+      {% if user.role.value == "admin" and extraction and extraction.corrected_json %}
+        {% set cj = extraction.corrected_json | fromjson %}
+        {% if cj and cj.get("custom_kpis") %}
+        {% set ckpis = cj.custom_kpis %}
+        <div class="card">
+          <h2>Custom KPIs <span style="font-size:0.78rem;font-weight:400;color:#999">(approved)</span></h2>
+          {% if ckpis.items() | list | length > 0 %}
+          <div class="meta-grid" style="margin-top:0.5rem">
+            {% for fk, entry in ckpis.items() %}
+            {% if entry %}
+            <span class="label" style="font-family:monospace;font-size:0.78rem">{{ fk }}</span>
+            <span style="font-size:0.875rem">
+              {% if entry.get('value') is not none %}
+                {{ entry.value }}
+                <span class="text-muted text-sm">· {{ entry.get('confidence','?') }} confidence</span>
+                {% if entry.get('source_text') %}
+                <br><span class="text-sm text-muted" style="font-style:italic">{{ entry.source_text }}</span>
+                {% endif %}
+              {% else %}
+                <span class="text-muted">null</span>
+              {% endif %}
+            </span>
+            {% endif %}
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-sm text-muted" style="margin-top:0.25rem">No custom KPI fields defined for this company.</p>
+          {% endif %}
+        </div>
+        {% endif %}
+      {% endif %}
+
+    </div>
+
+    {# ── Right sidebar ──────────────────────────────────────────────────────── #}
+    <div style="display:flex;flex-direction:column;gap:1rem">
+
+      {# ── File details ── #}
+      <div class="card">
+        <h2>Details</h2>
+        <div class="meta-grid">
+
+          <span class="label">Company</span>
+          <span>{{ company.name if company else "—" }}</span>
+
+          <span class="label">Category</span>
+          <span>
+            <span class="badge badge-neutral" style="font-size:0.72rem">
+              {{ doc.document_category.value.replace('_',' ').title() }}
+            </span>
+          </span>
+
+          {% if doc.reporting_period %}
+          <span class="label">Period</span>
+          <span style="font-weight:500">{{ doc.reporting_period }}</span>
+          {% elif doc.reporting_year %}
+          <span class="label">Period</span>
+          <span style="font-weight:500">
+            {% if doc.reporting_month %}
+              {{ ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][doc.reporting_month] }} {{ doc.reporting_year }}
+            {% elif doc.reporting_quarter %}
+              Q{{ doc.reporting_quarter }} {{ doc.reporting_year }}
+            {% else %}
+              {{ doc.reporting_year }}
+            {% endif %}
+          </span>
+          {% endif %}
+
+          <span class="label">File</span>
+          <span>
+            <span class="ext-badge ext-{{ doc.file_type }}">{{ doc.file_type.upper() }}</span>
+            <span class="text-sm" style="margin-left:0.3rem;word-break:break-all">{{ doc.filename }}</span>
+          </span>
+
+          <span class="label">Size</span>
+          <span>{{ readable_size(doc.file_size) if doc.file_size else "—" }}</span>
+
+          <span class="label">Uploaded</span>
+          <span>{{ doc.created_at.strftime("%d %b %Y") }}</span>
+
+          <span class="label">By</span>
+          <span>{{ uploader.name or uploader.email if uploader else "—" }}</span>
+
+          {% if doc.sha256 %}
+          <span class="label">SHA-256</span>
+          <span style="font-family:monospace;font-size:0.72rem;color:#888;word-break:break-all">{{ doc.sha256[:20] }}…</span>
+          {% endif %}
+
+        </div>
+      </div>
+
+      {# ── Admin actions ── #}
+      {% if user.role.value == "admin" %}
+      <div class="card">
+        <h2>Actions</h2>
+        <div class="action-row">
+
+          {# Run / re-run LLM extraction #}
+          {% set es = doc.extraction_status.value %}
+          {% set can_extract = doc.raw_text and es in ("complete","failed","no_api_key","extracted") %}
+          {% if can_extract %}
+          <form method="post" action="/documents/{{ doc.id }}/extract">
+            <button class="btn btn-primary" style="width:100%;font-size:0.875rem"
+                    onclick="this.disabled=true;this.textContent='Running…';this.form.submit()">
+              {% if extraction %}Re-run{% else %}Run{% endif %} LLM extraction
+            </button>
+          </form>
+          {% endif %}
+
+          {# Go to review #}
+          {% if es == "extracted" and extraction %}
+          <a href="/admin/review/{{ extraction.id }}" class="btn btn-primary"
+             style="font-size:0.875rem;display:block;text-align:center">
+            Review extraction →
+          </a>
+          {% endif %}
+
+          {# Re-embed #}
+          {% if doc.review_status.value == "approved" and extraction %}
+          <form method="post" action="/documents/{{ doc.id }}/re-embed">
+            <button class="btn btn-secondary" style="width:100%;font-size:0.875rem"
+                    onclick="this.disabled=true;this.textContent='Embedding…';this.form.submit()">
+              Re-embed approved extraction
+            </button>
+          </form>
+          {% endif %}
+
+        </div>
+
+        <hr class="divider" style="margin:1rem 0 0.75rem">
+        <form method="post" action="/documents/{{ doc.id }}/delete"
+              onsubmit="return confirm('Delete &quot;{{ doc.title }}&quot;?\n\nThis permanently removes the document, its extraction, embeddings and all associated data. This cannot be undone.')">
+          <button class="btn btn-danger" style="width:100%;font-size:0.875rem" type="submit">
+            Delete document
+          </button>
+        </form>
+
+        {# Warn if extraction_error #}
+        {% if doc.extraction_error and doc.extraction_status.value == "failed" %}
+        <div class="alert alert-error mt-2" style="font-size:0.8rem">
+          {{ doc.extraction_error[:300] }}
+        </div>
+        {% elif doc.extraction_status.value == "no_api_key" %}
+        <div class="alert alert-warn mt-2" style="font-size:0.8rem">
+          OpenRouter API key not set. <a href="/admin/settings">Configure →</a>
+        </div>
+        {% endif %}
+
+      </div>
+      {% endif %}
+
+      {# ── User: approved message ── #}
+      {% if user.role.value != "admin" %}
+        {% if doc.review_status.value == "approved" %}
+        <div class="alert alert-info" style="font-size:0.85rem">
+          This document has been approved and is searchable in chat.
+        </div>
+        {% elif doc.review_status.value == "rejected" %}
+        <div class="alert alert-error" style="font-size:0.85rem">
+          This document was rejected. Contact an admin if you believe this is an error.
+        </div>
+        {% else %}
+        <div class="alert alert-warn" style="font-size:0.85rem">
+          This document is being processed. Check back later.
+        </div>
+        {% endif %}
+      {% endif %}
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+

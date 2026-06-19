@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% block title %}{{ company.name }} – Settings{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<a href="/admin/companies">Companies</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">{{ company.name }} – Settings</span>
+{% endblock %}
+
+{% block body %}
+<div class="page-content">
+
+  <div class="page-header">
+    <h1>{{ company.name }} – Settings</h1>
+    <p class="subtitle">Configure reporting schedule and custom KPI fields for this company.</p>
+  </div>
+
+  {% if success %}
+  <div class="alert alert-success">{{ success }}</div>
+  {% endif %}
+  {% if error %}
+  <div class="alert alert-error">{{ error }}</div>
+  {% endif %}
+
+  {# ── Reporting settings ── #}
+  <div class="card" style="margin-bottom:1.5rem">
+    <h2>Reporting settings</h2>
+    <form method="post" action="/admin/companies/{{ company.id }}/settings/reporting" novalidate>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
+
+        <div class="field" style="margin-bottom:0">
+          <label for="reporting_frequency">Frequency <span style="color:#dc2626">*</span></label>
+          <select id="reporting_frequency" name="reporting_frequency">
+            {% for f in frequencies %}
+            <option value="{{ f.value }}" {% if settings.reporting_frequency == f %}selected{% endif %}>
+              {{ f.value.replace('_',' ').capitalize() }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="field" style="margin-bottom:0">
+          <label for="reporting_start_date">Reporting start date</label>
+          <input id="reporting_start_date" name="reporting_start_date" type="date"
+                 value="{{ settings.reporting_start_date.isoformat() if settings.reporting_start_date else '' }}">
+        </div>
+
+        <div class="field" style="margin-bottom:0">
+          <label for="reporting_day_due">Day due (day of month)</label>
+          <input id="reporting_day_due" name="reporting_day_due" type="number" min="1" max="31"
+                 placeholder="15"
+                 value="{{ settings.reporting_day_due or '' }}">
+        </div>
+
+      </div>
+      <div style="margin-top:1rem">
+        <button class="btn btn-primary" type="submit">Save reporting settings</button>
+      </div>
+    </form>
+  </div>
+
+  {# ── Standard KPIs ── #}
+  <div class="card" style="margin-bottom:1.5rem">
+    <h2>Standard KPI fields</h2>
+    <p class="text-sm text-muted" style="margin-bottom:1rem">
+      These fields are extracted from every document by default.
+      Hide the ones that are not relevant for this company — they will be excluded from review and embeddings.
+    </p>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Key</th>
+          <th>Label</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for kpi in standard_kpis %}
+        {% set is_excluded = kpi.key in excluded_standard_kpis %}
+        <tr style="{% if is_excluded %}opacity:0.45{% endif %}">
+          <td><code class="slug-code">{{ kpi.key }}</code></td>
+          <td style="font-weight:500">{{ kpi.label }}</td>
+          <td><span class="badge badge-neutral">{{ kpi.field_type }}</span></td>
+          <td>
+            {% if is_excluded %}
+            <span class="badge badge-neutral">hidden</span>
+            {% else %}
+            <span class="badge badge-success">active</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post"
+                  action="/admin/companies/{{ company.id }}/settings/standard-kpis/{{ kpi.key }}/toggle"
+                  style="display:inline">
+              <button class="btn btn-sm btn-ghost" type="submit">
+                {{ 'Show' if is_excluded else 'Hide' }}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── KPI fields ── #}
+  <div class="card">
+    <h2>Custom KPI fields ({{ kpi_fields|length }})</h2>
+    <p class="text-sm text-muted" style="margin-bottom:1rem">
+      These fields will be extracted from regular reporting documents by the LLM.
+    </p>
+
+    {% if kpi_fields %}
+    <div class="overflow-auto" style="margin-bottom:1.5rem">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Label</th>
+            <th>Type</th>
+            <th>Required</th>
+            <th>Status</th>
+            <th>Description / hint</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in kpi_fields %}
+          <tr style="{% if not f.is_active %}opacity:0.45{% endif %}">
+            <td><code class="slug-code">{{ f.field_key }}</code></td>
+            <td style="font-weight:500">{{ f.field_label }}</td>
+            <td>
+              <span class="badge badge-neutral">{{ f.field_type.value }}</span>
+            </td>
+            <td>
+              {% if f.is_required %}
+              <span class="badge badge-error">required</span>
+              {% else %}
+              <span class="text-muted text-sm">optional</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if f.is_active %}
+              <span class="badge badge-success">active</span>
+              {% else %}
+              <span class="badge badge-neutral">inactive</span>
+              {% endif %}
+            </td>
+            <td class="text-sm text-muted">
+              {% if f.description %}{{ f.description }}{% endif %}
+              {% if f.extraction_hint %}<br><em>Hint: {{ f.extraction_hint }}</em>{% endif %}
+              {% if not f.description and not f.extraction_hint %}—{% endif %}
+            </td>
+            <td style="white-space:nowrap">
+              <form method="post"
+                    action="/admin/companies/{{ company.id }}/settings/kpi-fields/{{ f.id }}/toggle"
+                    style="display:inline">
+                <button class="btn btn-sm btn-ghost" type="submit"
+                        title="{{ 'Deactivate' if f.is_active else 'Activate' }}">
+                  {{ '⏸' if f.is_active else '▶' }}
+                </button>
+              </form>
+              <form method="post"
+                    action="/admin/companies/{{ company.id }}/settings/kpi-fields/{{ f.id }}/delete"
+                    style="display:inline"
+                    onsubmit="return confirm('Delete field {{ f.field_key }}? This cannot be undone.')">
+                <button class="btn btn-sm btn-danger" type="submit" title="Delete">✕</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="text-sm text-muted" style="margin-bottom:1.5rem">No KPI fields defined yet.</p>
+    {% endif %}
+
+    {# Add new field form #}
+    <details {% if kpi_form is defined and kpi_form %}open{% endif %}>
+      <summary style="cursor:pointer;font-weight:600;font-size:0.9rem;margin-bottom:0.75rem;list-style:none">
+        ＋ Add new KPI field
+      </summary>
+      <form method="post"
+            action="/admin/companies/{{ company.id }}/settings/kpi-fields/add"
+            novalidate style="margin-top:0.75rem">
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+          <div class="field">
+            <label for="field_key">Field key <span style="color:#dc2626">*</span></label>
+            <input id="field_key" name="field_key" type="text"
+                   placeholder="revenue_eur"
+                   value="{{ kpi_form.field_key if kpi_form is defined else '' }}"
+                   pattern="[a-z][a-z0-9_]*"
+                   required>
+            <div class="text-sm text-muted" style="margin-top:0.25rem">
+              Lowercase, letters/digits/underscores, starts with letter.
+            </div>
+          </div>
+          <div class="field">
+            <label for="field_label">Label <span style="color:#dc2626">*</span></label>
+            <input id="field_label" name="field_label" type="text"
+                   placeholder="Revenue (EUR)"
+                   value="{{ kpi_form.field_label if kpi_form is defined else '' }}"
+                   required>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+          <div class="field">
+            <label for="field_type">Type</label>
+            <select id="field_type" name="field_type">
+              {% for t in field_types %}
+              <option value="{{ t.value }}"
+                {% if kpi_form is defined and kpi_form.field_type == t.value %}selected
+                {% elif t.value == 'text' and not (kpi_form is defined) %}selected{% endif %}>
+                {{ t.value.capitalize() }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field" style="display:flex;align-items:flex-end;padding-bottom:0.05rem">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-weight:400">
+              <input type="checkbox" name="is_required" value="1"
+                     {% if kpi_form is defined and kpi_form.is_required %}checked{% endif %}>
+              Mark as required
+            </label>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="description">Description <span style="color:#9ca3af;font-weight:400">(optional)</span></label>
+          <input id="description" name="description" type="text"
+                 placeholder="Total revenue for the reporting period"
+                 value="{{ kpi_form.description if kpi_form is defined else '' }}">
+        </div>
+
+        <div class="field">
+          <label for="extraction_hint">Extraction hint <span style="color:#9ca3af;font-weight:400">(optional)</span></label>
+          <input id="extraction_hint" name="extraction_hint" type="text"
+                 placeholder="Look for 'Total Revenue' or 'Net Sales' in the P&L section"
+                 value="{{ kpi_form.extraction_hint if kpi_form is defined else '' }}">
+          <div class="text-sm text-muted" style="margin-top:0.25rem">
+            Hint passed to the LLM to help locate this value in the document.
+          </div>
+        </div>
+
+        <button class="btn btn-primary" type="submit">Add KPI field</button>
+      </form>
+    </details>
+  </div>
+
+</div>
+{% endblock %}

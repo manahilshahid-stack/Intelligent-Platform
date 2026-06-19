@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}Settings – Admin{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">Settings</span>
+{% endblock %}
+
+{% block body %}
+<div class="page-content narrow">
+
+  <div class="page-header">
+    <h1>Settings</h1>
+  </div>
+
+  {% if test_result %}
+  <div class="alert {% if test_result.ok %}alert-success{% else %}alert-error{% endif %}"
+       style="display:flex;align-items:flex-start;gap:0.65rem">
+    <span style="font-size:1.1rem;line-height:1.2">{% if test_result.ok %}✓{% else %}✗{% endif %}</span>
+    <div><strong>OpenRouter connection test:</strong> {{ test_result.message }}</div>
+  </div>
+  {% endif %}
+
+  {% if attio_test %}
+  <div class="alert {% if attio_test == 'ok' %}alert-success{% else %}alert-error{% endif %}"
+       style="display:flex;align-items:flex-start;gap:0.65rem">
+    <span style="font-size:1.1rem;line-height:1.2">{% if attio_test == 'ok' %}✓{% else %}✗{% endif %}</span>
+    <div><strong>Attio connection test:</strong> {{ attio_msg }}</div>
+  </div>
+  {% endif %}
+
+  {% if attio_error %}
+  <div class="alert alert-error">Attio error: {{ attio_error }}</div>
+  {% endif %}
+
+  {% if attio_saved %}
+  <div class="alert alert-info">Attio settings saved.</div>
+  {% endif %}
+
+  {% if error and not test_result %}
+  <div class="alert alert-error">{{ error }}</div>
+  {% endif %}
+
+  {% if success and not test_result %}
+  <div class="alert alert-info">{{ success }}</div>
+  {% elif success and test_result %}
+  <div class="alert {% if test_result.ok %}alert-info{% else %}alert-warn{% endif %}">{{ success }}</div>
+  {% endif %}
+
+  <div class="card">
+    <h2>OpenRouter API key</h2>
+
+    <div class="meta-grid">
+
+      <span class="label">Active key</span>
+      <span>
+        {% if has_active_key %}
+          <code style="font-family:monospace;font-size:0.85rem;background:#f3f4f6;
+                       padding:0.2rem 0.5rem;border-radius:4px;letter-spacing:0.04em">
+            {{ masked_active_key }}
+          </code>
+          <span class="text-sm text-muted" style="margin-left:0.5rem">
+            (source: {% if env_active %}environment variable{% else %}database{% endif %})
+          </span>
+        {% else %}
+          <span style="color:#dc2626;font-weight:500">⚠ No key configured</span>
+        {% endif %}
+      </span>
+
+      {% if env_active %}
+      <span class="label">Note</span>
+      <span class="text-sm" style="color:#92400e">
+        <code>OPENROUTER_API_KEY</code> env var is set and takes precedence.
+        Saving a database key has no effect while the env var is present.
+      </span>
+      {% endif %}
+
+    </div>
+
+    {% if has_active_key %}
+    <div style="margin-top:1.25rem">
+      <form method="post" action="/admin/settings/test" style="display:inline">
+        <button type="submit" class="btn btn-secondary btn-sm">Test connection →</button>
+      </form>
+      <span class="text-sm text-muted" style="margin-left:0.75rem">
+        Sends a minimal request to verify the key is accepted by OpenRouter.
+      </span>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>{% if has_active_key and not env_active %}Update key{% else %}Set API key{% endif %}</h2>
+
+    <p class="text-sm text-muted" style="line-height:1.6;margin-bottom:1.25rem">
+      Get your key from
+      <a href="https://openrouter.ai/keys" target="_blank" rel="noopener" style="color:#4f46e5">openrouter.ai/keys</a>.
+      The key is stored in plain text in the database. For production, prefer setting
+      <code>OPENROUTER_API_KEY</code> as a Railway environment variable instead.
+    </p>
+
+    <form method="post" action="/admin/settings/openrouter" novalidate>
+      <div class="field">
+        <label for="api_key">OpenRouter API key</label>
+        <input id="api_key" name="api_key" type="password"
+               placeholder="sk-or-v1-…"
+               autocomplete="off"
+               style="font-family:monospace;letter-spacing:0.03em">
+      </div>
+      <button class="btn btn-primary" type="submit"
+              onclick="this.disabled=true;this.textContent='Saving…';this.form.submit()">
+        Save &amp; test
+      </button>
+    </form>
+  </div>
+
+  {# ── Attio CRM ── #}
+  <div class="card" style="margin-top:1.5rem">
+    <h2>Attio CRM</h2>
+
+    <div class="meta-grid" style="margin-bottom:1.25rem">
+      <span class="label">Active key</span>
+      <span>
+        {% if attio_has_key %}
+          <code style="font-family:monospace;font-size:0.85rem;background:#f3f4f6;
+                       padding:0.2rem 0.5rem;border-radius:4px">{{ attio_masked_key }}</code>
+          <span class="text-sm text-muted" style="margin-left:0.5rem">
+            (source: {% if attio_env_active %}environment variable{% else %}database{% endif %})
+          </span>
+        {% else %}
+          <span style="color:#dc2626;font-weight:500">⚠ Not configured</span>
+        {% endif %}
+      </span>
+
+      <span class="label">Object slug</span>
+      <span class="text-sm" style="font-family:monospace">{{ attio_object_slug }}</span>
+
+      {% if attio_list_id_or_slug %}
+      <span class="label">List</span>
+      <span class="text-sm" style="font-family:monospace">{{ attio_list_id_or_slug }}</span>
+      {% endif %}
+    </div>
+
+    {% if attio_has_key %}
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1.25rem">
+      <form method="post" action="/admin/crm/test">
+        <button type="submit" class="btn btn-secondary btn-sm">Test connection →</button>
+      </form>
+      <form method="post" action="/admin/crm/fields">
+        <button type="submit" class="btn btn-secondary btn-sm">Fetch fields</button>
+      </form>
+      <form method="post" action="/admin/crm/sync">
+        <button type="submit" class="btn btn-primary btn-sm"
+                onclick="this.disabled=true;this.textContent='Syncing…';this.form.submit()">
+          Sync now
+        </button>
+      </form>
+      <a href="/admin/crm/ventures" class="btn btn-ghost btn-sm">View ventures →</a>
+    </div>
+    {% endif %}
+
+    <form method="post" action="/admin/crm/settings" novalidate>
+      <div class="field">
+        <label for="attio_api_key">{% if attio_has_key %}Update{% else %}Set{% endif %} Attio API key</label>
+        <input id="attio_api_key" name="attio_api_key" type="password"
+               placeholder="Leave blank to keep existing key"
+               autocomplete="off" style="font-family:monospace">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div class="field">
+          <label for="attio_object_slug">Object slug</label>
+          <input id="attio_object_slug" name="attio_object_slug" type="text"
+                 value="{{ attio_object_slug }}" placeholder="companies">
+          <div class="text-sm text-muted" style="margin-top:0.2rem">Default: <code>companies</code></div>
+        </div>
+        <div class="field">
+          <label for="attio_list_id_or_slug">List ID or slug <span class="text-muted">(optional)</span></label>
+          <input id="attio_list_id_or_slug" name="attio_list_id_or_slug" type="text"
+                 value="{{ attio_list_id_or_slug }}" placeholder="e.g. pipeline">
+          <div class="text-sm text-muted" style="margin-top:0.2rem">Leave blank to sync all records</div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" type="submit">Save Attio settings</button>
+    </form>
+  </div>
+
+  {% if attio_fields %}
+  <div class="card" style="margin-top:1rem">
+    <h2>Attio object attributes <span class="text-muted text-sm">({{ attio_object_slug }})</span></h2>
+    <div class="overflow-auto" style="max-height:340px">
+      <table class="data-table">
+        <thead>
+          <tr><th>Slug</th><th>Title</th><th>Type</th><th>Required</th><th>Unique</th></tr>
+        </thead>
+        <tbody>
+          {% for a in attio_fields %}
+          <tr>
+            <td><code style="font-size:0.8rem">{{ a.api_slug }}</code></td>
+            <td class="text-sm">{{ a.title }}</td>
+            <td><span class="badge badge-neutral" style="font-size:0.7rem">{{ a.type }}</span></td>
+            <td class="text-sm text-muted">{% if a.is_required %}yes{% else %}—{% endif %}</td>
+            <td class="text-sm text-muted">{% if a.is_unique %}yes{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card" style="margin-top:1rem">
+    <h2>How to configure OpenRouter</h2>
+    <ol style="font-size:0.875rem;line-height:2;color:#555;padding-left:1.25rem;margin:0">
+      <li>Go to <a href="https://openrouter.ai" target="_blank" rel="noopener" style="color:#4f46e5">openrouter.ai</a> and create an account.</li>
+      <li>Navigate to <strong>Keys</strong> and click <strong>Create key</strong>.</li>
+      <li>Copy the key — it starts with <code>sk-or-v1-</code>.</li>
+      <li>Paste it above and click <strong>Save &amp; test</strong>. The app will verify the key works immediately.</li>
+      <li>Alternatively, set <code>OPENROUTER_API_KEY</code> in Railway's Variables tab — this takes precedence over the database key and is more secure.</li>
+    </ol>
+    <div class="alert alert-warn" style="margin-top:1rem;font-size:0.825rem">
+      <strong>Models used by this app:</strong><br>
+      Extraction &amp; chat: <code>openai/gpt-4o-mini</code> (override with <code>OPENROUTER_CHAT_MODEL</code>)<br>
+      Embeddings: <code>openai/text-embedding-3-small</code> (override with <code>OPENROUTER_EMBEDDING_MODEL</code>)<br>
+      You need credits on OpenRouter for these models to work.
+      <a href="https://openrouter.ai/credits" target="_blank" rel="noopener" style="color:#92400e">Add credits →</a>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Users – Admin{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">Users</span>
+{% endblock %}
+
+{% block body %}
+<div class="page-content">
+
+  <div class="page-header">
+    <h1>Users</h1>
+  </div>
+
+  {% if error %}
+  <div class="alert alert-error">{{ error }}</div>
+  {% endif %}
+
+  {% if success %}
+  <div class="alert alert-info">{{ success }}</div>
+  {% endif %}
+
+  <div class="card" style="padding:0;overflow:hidden">
+    <div style="padding:1.25rem 1.5rem;border-bottom:1px solid #e5e5e5">
+      <h2 style="margin:0">All users ({{ users|length }})</h2>
+    </div>
+
+    {% if users %}
+    <div class="overflow-auto">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name / Email</th>
+          <th>Role</th>
+          <th>Company</th>
+          <th>Joined</th>
+          <th style="width:240px">Update</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        {% set assigned = companies | selectattr("id", "eq", u.company_id) | first | default(none) %}
+        <tr>
+          <td>
+            <div style="font-weight:500">{{ u.name or "—" }}</div>
+            <div class="text-sm text-muted">{{ u.email }}</div>
+          </td>
+          <td>
+            {% if u.role.value == "admin" %}
+              <span class="badge badge-admin">Admin</span>
+            {% else %}
+              <span class="badge badge-user">User</span>
+            {% endif %}
+          </td>
+          <td class="text-sm">
+            {% if assigned %}{{ assigned.name }}
+            {% else %}<span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-sm text-muted">{{ u.created_at.strftime("%d %b %Y") }}</td>
+          <td>
+            <form method="post" action="/admin/users/{{ u.id }}/update"
+                  style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap">
+              <select name="role" class="select-sm" title="Role">
+                <option value="user"  {% if u.role.value == "user"  %}selected{% endif %}>User</option>
+                <option value="admin" {% if u.role.value == "admin" %}selected{% endif %}>Admin</option>
+              </select>
+              <select name="company_id" class="select-sm" title="Assign company">
+                <option value="">No company</option>
+                {% for c in companies %}
+                <option value="{{ c.id }}" {% if u.company_id == c.id %}selected{% endif %}>
+                  {{ c.name }}
+                </option>
+                {% endfor %}
+              </select>
+              <button class="btn btn-secondary btn-sm" type="submit">Save</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="text-sm text-muted" style="padding:1.5rem">No users yet.</p>
+    {% endif %}
+  </div>
+
+</div>
+
+<style>
+.select-sm {
+  padding:0.3rem 0.5rem; border:1px solid #d1d5db; border-radius:5px;
+  font-size:0.82rem; background:#fff; cursor:pointer; outline:none;
+}
+.select-sm:focus { border-color:#4f46e5; box-shadow:0 0 0 2px rgba(79,70,229,0.1); }
+</style>
+{% endblock %}

@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Reporting Tracker – Admin{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">Reporting Tracker</span>
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="/documents/upload" class="btn btn-primary btn-sm">+ Upload</a>
+{% endblock %}
+
+{% block body %}
+<div class="page-content full">
+
+  <div class="page-header">
+    <h1>Reporting Tracker</h1>
+    <p class="subtitle">
+      Portfolio-wide view of expected vs. uploaded regular reportings.
+      {% if missing_count > 0 %}
+      <span style="color:#dc2626;font-weight:600">{{ missing_count }} period{{ 's' if missing_count != 1 else '' }} missing.</span>
+      {% else %}
+      All tracked periods have been uploaded.
+      {% endif %}
+    </p>
+  </div>
+
+  {# ── Filters ── #}
+  <form method="get" action="/admin/reporting-tracker" style="margin-bottom:1.25rem">
+    <div style="display:flex;flex-wrap:wrap;gap:0.6rem;align-items:flex-end">
+
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.25rem">Company</label>
+        <select name="company_id" style="min-width:170px;padding:0.45rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+          <option value="">All companies</option>
+          {% for c in companies %}
+          <option value="{{ c.id }}" {% if filter_company_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.25rem">Year</label>
+        <select name="year" style="min-width:100px;padding:0.45rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+          <option value="">All years</option>
+          {% for y in years %}
+          <option value="{{ y }}" {% if filter_year == y %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#6b7280;margin-bottom:0.25rem">Status</label>
+        <select name="filter_status" style="min-width:150px;padding:0.45rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+          <option value="">All statuses</option>
+          {% for s in ['missing','uploaded','text_extracted','pending_review','approved','rejected','failed'] %}
+          <option value="{{ s }}" {% if filter_status == s %}selected{% endif %}>
+            {{ s.replace('_',' ').capitalize() }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button class="btn btn-secondary btn-sm" type="submit">Filter</button>
+      {% if filter_company_id or filter_year or filter_status %}
+      <a href="/admin/reporting-tracker" class="btn btn-ghost btn-sm">Clear</a>
+      {% endif %}
+    </div>
+  </form>
+
+  {# ── Table ── #}
+  <div class="card" style="padding:0">
+    <div class="overflow-auto">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Company</th>
+            <th>Period</th>
+            <th>Frequency</th>
+            <th>Due date</th>
+            <th>Status</th>
+            <th>Document</th>
+            <th>Uploaded</th>
+            <th>Extraction</th>
+            <th>Review</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if rows %}
+          {% for row in rows %}
+          <tr>
+            <td style="font-weight:500">{{ row.company_name }}</td>
+            <td style="white-space:nowrap">{{ row.period_label }}</td>
+            <td>
+              <span class="badge badge-neutral">{{ row.category.replace('_reporting','').replace('_',' ') }}</span>
+            </td>
+            <td class="text-sm text-muted">
+              {% if row.due_date %}{{ row.due_date.strftime('%d %b %Y') }}{% else %}—{% endif %}
+            </td>
+            <td>
+              {% set badge_cls, badge_label = row.status_badge %}
+              <span class="badge {{ badge_cls }}">{{ badge_label }}</span>
+            </td>
+            <td>
+              {% if row.document %}
+              <a href="/documents/{{ row.document.id }}" style="color:#4f46e5;font-size:0.85rem">
+                {{ row.document.title | truncate(40) }}
+              </a>
+              {% else %}
+              <span class="text-muted text-sm">—</span>
+              {% endif %}
+            </td>
+            <td class="text-sm text-muted">
+              {% if row.document %}{{ row.document.created_at.strftime('%d %b %Y') }}{% else %}—{% endif %}
+            </td>
+            <td>
+              {% if row.document %}
+              <span class="badge badge-neutral" style="font-size:0.68rem">
+                {{ row.document.extraction_status.value.replace('_',' ') }}
+              </span>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if row.document %}
+              <span class="badge badge-neutral" style="font-size:0.68rem">
+                {{ row.document.review_status.value }}
+              </span>
+              {% else %}—{% endif %}
+            </td>
+            <td style="white-space:nowrap">
+              {% if row.document %}
+              <a href="/documents/{{ row.document.id }}" class="btn btn-sm btn-ghost">View</a>
+              {% else %}
+              <a href="/documents/upload" class="btn btn-sm btn-primary">Upload</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          {% else %}
+          <tr>
+            <td colspan="10" style="text-align:center;padding:2rem;color:#9ca3af">
+              {% if total == 0 %}
+              No companies have reporting configured yet.
+              Set up reporting in <a href="/admin/companies" style="color:#4f46e5">company settings</a>.
+              {% else %}
+              No results match your filters.
+              {% endif %}
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if rows %}
+    <div style="padding:0.75rem 1rem;border-top:1px solid #f0f0f0;font-size:0.8rem;color:#9ca3af">
+      Showing {{ rows|length }} of {{ total }} periods
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Delete {{ company.name }} – Admin{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<a href="/admin/companies">Companies</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">Delete {{ company.name }}</span>
+{% endblock %}
+
+{% block body %}
+<div class="page-content narrow">
+
+  <div class="page-header">
+    <h1>Delete company</h1>
+  </div>
+
+  <div class="card">
+    <div class="alert alert-error" style="margin-bottom:1.25rem">
+      <strong>This action is permanent and cannot be undone.</strong><br>
+      Deleting <strong>{{ company.name }}</strong> will remove:
+      <ul style="margin:0.5rem 0 0 1.1rem;line-height:1.8">
+        <li>{{ doc_count }} document{{ 's' if doc_count != 1 else '' }} and all associated extractions &amp; embeddings</li>
+        <li>{{ user_count }} user{{ 's' if user_count != 1 else '' }} will be unlinked from this company</li>
+        <li>All reporting settings and custom KPI fields</li>
+        <li>All chat sessions scoped to this company</li>
+      </ul>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-warn">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/admin/companies/{{ company.id }}/delete" novalidate>
+      <div class="field">
+        <label for="confirm_name">
+          Type <strong>{{ company.name }}</strong> to confirm deletion
+        </label>
+        <input id="confirm_name" name="confirm_name" type="text"
+               placeholder="{{ company.name }}"
+               autocomplete="off"
+               required autofocus>
+      </div>
+      <div style="display:flex;gap:0.75rem;margin-top:0.25rem">
+        <button class="btn btn-danger" type="submit">Permanently delete company</button>
+        <a href="/admin/companies" class="btn btn-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+</div>
+{% endblock %}

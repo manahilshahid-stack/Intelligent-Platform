@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Syncing CRM – Admin{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<a href="/admin/crm/ventures">CRM Ventures</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">Syncing…</span>
+{% endblock %}
+
+{% block body %}
+<div class="page-content narrow">
+
+  <div class="page-header">
+    <h1>Syncing from Attio</h1>
+    <p class="subtitle">Run #{{ run.id }} — started {{ run.started_at.strftime('%H:%M:%S') }}</p>
+  </div>
+
+  <div class="card" style="padding:2rem">
+
+    {# Status badge #}
+    <div id="status-badge" style="margin-bottom:1.5rem;font-size:0.9rem;font-weight:600">
+      <span id="status-text" style="color:#92400e">Running…</span>
+    </div>
+
+    {# Progress bar #}
+    <div style="background:#f3f4f6;border-radius:8px;height:18px;overflow:hidden;margin-bottom:0.75rem">
+      <div id="progress-bar"
+           style="height:100%;width:0%;background:linear-gradient(90deg,#4f46e5,#7c3aed);
+                  border-radius:8px;transition:width 0.4s ease">
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;font-size:0.82rem;color:#6b7280;margin-bottom:1.5rem">
+      <span id="progress-label">Fetching entries…</span>
+      <span id="progress-pct">0%</span>
+    </div>
+
+    {# Counters #}
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:2rem">
+      <div style="text-align:center;padding:0.75rem;background:#f9fafb;border-radius:8px">
+        <div id="cnt-seen" style="font-size:1.6rem;font-weight:700;color:#111827">–</div>
+        <div style="font-size:0.75rem;color:#6b7280;margin-top:0.2rem">Processed</div>
+      </div>
+      <div style="text-align:center;padding:0.75rem;background:#f9fafb;border-radius:8px">
+        <div id="cnt-created" style="font-size:1.6rem;font-weight:700;color:#166534">–</div>
+        <div style="font-size:0.75rem;color:#6b7280;margin-top:0.2rem">Created</div>
+      </div>
+      <div style="text-align:center;padding:0.75rem;background:#f9fafb;border-radius:8px">
+        <div id="cnt-updated" style="font-size:1.6rem;font-weight:700;color:#1d4ed8">–</div>
+        <div style="font-size:0.75rem;color:#6b7280;margin-top:0.2rem">Updated</div>
+      </div>
+    </div>
+
+    {# Error area #}
+    <div id="error-area" style="display:none" class="alert alert-error"></div>
+
+    {# Done — redirecting #}
+    <div id="done-area" style="display:none;text-align:center;color:#166534;font-weight:500;font-size:0.9rem">
+      Sync complete — redirecting…
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+(function() {
+  var pollUrl = "/admin/crm/sync/progress/{{ run.id }}/json";
+  var doneUrl = "/admin/crm/ventures?sync_run={{ run.id }}";
+  var pollMs  = 1200;
+  var timer;
+
+  function poll() {
+    fetch(pollUrl)
+      .then(function(r) { return r.json(); })
+      .then(function(d) { update(d); })
+      .catch(function() { /* network hiccup — just retry */ });
+  }
+
+  function update(d) {
+    var total   = d.records_total;
+    var seen    = d.records_seen;
+    var pct     = d.pct;
+    var status  = d.status;
+
+    // Progress bar
+    document.getElementById("progress-bar").style.width = pct + "%";
+    document.getElementById("progress-pct").textContent = pct + "%";
+
+    // Label
+    if (total !== null && total > 0) {
+      document.getElementById("progress-label").textContent =
+        seen + " of " + total + " records";
+    } else if (status === "running") {
+      document.getElementById("progress-label").textContent = "Fetching entries from Attio…";
+    }
+
+    // Counters
+    document.getElementById("cnt-seen").textContent    = seen >= 0 ? seen : "–";
+    document.getElementById("cnt-created").textContent = d.records_created >= 0 ? d.records_created : "–";
+    document.getElementById("cnt-updated").textContent = d.records_updated >= 0 ? d.records_updated : "–";
+
+    if (status === "success") {
+      clearInterval(timer);
+      document.getElementById("progress-bar").style.width = "100%";
+      document.getElementById("progress-pct").textContent = "100%";
+      document.getElementById("status-text").textContent = "Complete";
+      document.getElementById("status-text").style.color = "#166534";
+      document.getElementById("progress-label").textContent = seen + " records processed";
+      document.getElementById("done-area").style.display = "";
+      setTimeout(function() { window.location.href = doneUrl; }, 1500);
+    } else if (status === "failed") {
+      clearInterval(timer);
+      document.getElementById("status-text").textContent = "Failed";
+      document.getElementById("status-text").style.color = "#991b1b";
+      var errArea = document.getElementById("error-area");
+      errArea.style.display = "";
+      errArea.textContent = "Sync failed: " + (d.error || "Unknown error");
+    }
+  }
+
+  timer = setInterval(poll, pollMs);
+  poll(); // immediate first poll
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}Reporting – {{ company.name if company else 'My Company' }}{% endblock %}
+
+{% block breadcrumb %}
+<span class="bc-current">Reporting</span>
+{% endblock %}
+
+{% block topbar_actions %}
+{% if company %}
+<a href="/documents/upload" class="btn btn-primary btn-sm">+ Upload document</a>
+{% endif %}
+{% endblock %}
+
+{% block body %}
+<div class="page-content">
+
+  <div class="page-header">
+    <h1>Reporting{% if company %} – {{ company.name }}{% endif %}</h1>
+    {% if settings %}
+    <p class="subtitle">
+      {{ settings.reporting_frequency.value.capitalize() }} reporting
+      {% if settings.reporting_start_date %}from {{ settings.reporting_start_date.strftime('%d %b %Y') }}{% endif %}
+      {% if settings.reporting_day_due %}&nbsp;· Due by day {{ settings.reporting_day_due }} of each period{% endif %}
+    </p>
+    {% endif %}
+  </div>
+
+  {% if error %}
+  <div class="alert alert-warn">{{ error }}</div>
+  {% endif %}
+
+  {% if not company %}
+  {# nothing to show #}
+
+  {% elif not settings or settings.reporting_frequency.value == 'none' %}
+  <div class="alert alert-info">Reporting schedule is not configured for this company yet.</div>
+
+  {% else %}
+
+  {# ── Regular reporting table ── #}
+  <div class="card" style="margin-bottom:1.5rem;padding:0">
+    <div style="padding:1rem 1.25rem;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h2 style="margin-bottom:0">Regular reportings</h2>
+        {% set missing = rows | selectattr('status','eq','missing') | list | length %}
+        {% if missing > 0 %}
+        <p class="text-sm" style="color:#dc2626;margin-top:0.2rem">
+          {{ missing }} period{{ 's' if missing != 1 else '' }} still missing
+        </p>
+        {% else %}
+        <p class="text-sm text-muted" style="margin-top:0.2rem">All periods uploaded ✓</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="overflow-auto">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th>Due date</th>
+            <th>Status</th>
+            <th>Document</th>
+            <th>Uploaded</th>
+            <th>Review</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if rows %}
+          {% for row in rows | sort(attribute='year', reverse=True) %}
+          <tr>
+            <td style="font-weight:500;white-space:nowrap">{{ row.period_label }}</td>
+            <td class="text-sm text-muted">
+              {% if row.due_date %}{{ row.due_date.strftime('%d %b %Y') }}{% else %}—{% endif %}
+            </td>
+            <td>
+              {% set badge_cls, badge_label = row.status_badge %}
+              <span class="badge {{ badge_cls }}">{{ badge_label }}</span>
+            </td>
+            <td>
+              {% if row.document %}
+              <a href="/documents/{{ row.document.id }}" style="color:#4f46e5;font-size:0.875rem">
+                {{ row.document.title | truncate(45) }}
+              </a>
+              {% else %}
+              <span class="text-muted text-sm">—</span>
+              {% endif %}
+            </td>
+            <td class="text-sm text-muted">
+              {% if row.document %}{{ row.document.created_at.strftime('%d %b %Y') }}{% else %}—{% endif %}
+            </td>
+            <td>
+              {% if row.document %}
+              <span class="badge badge-neutral" style="font-size:0.68rem">
+                {{ row.document.review_status.value }}
+              </span>
+              {% else %}—{% endif %}
+            </td>
+            <td>
+              {% if row.document %}
+              <a href="/documents/{{ row.document.id }}" class="btn btn-sm btn-ghost">View</a>
+              {% else %}
+              <a href="/documents/upload" class="btn btn-sm btn-primary">Upload</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          {% else %}
+          <tr>
+            <td colspan="7" style="text-align:center;padding:2rem;color:#9ca3af">
+              No reporting periods configured yet.
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% endif %}
+
+  {# ── Irregular documents ── #}
+  {% if company %}
+  <div class="card" style="padding:0">
+    <div style="padding:1rem 1.25rem;border-bottom:1px solid #f0f0f0">
+      <h2 style="margin-bottom:0">Other documents</h2>
+      <p class="text-sm text-muted" style="margin-top:0.2rem">
+        Pitches, board decks, IC memos and other non-reporting documents.
+      </p>
+    </div>
+
+    {% if irregular_docs %}
+    <div class="overflow-auto">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Category</th>
+            <th>Uploaded</th>
+            <th>Extraction</th>
+            <th>Review</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for doc in irregular_docs %}
+          <tr>
+            <td style="font-weight:500">
+              <a href="/documents/{{ doc.id }}" style="color:#4f46e5">{{ doc.title | truncate(50) }}</a>
+            </td>
+            <td>
+              <span class="badge badge-neutral" style="font-size:0.7rem">
+                {{ doc.document_category.value.replace('_',' ') }}
+              </span>
+            </td>
+            <td class="text-sm text-muted">{{ doc.created_at.strftime('%d %b %Y') }}</td>
+            <td>
+              <span class="badge badge-neutral" style="font-size:0.68rem">
+                {{ doc.extraction_status.value.replace('_',' ') }}
+              </span>
+            </td>
+            <td>
+              <span class="badge badge-neutral" style="font-size:0.68rem">
+                {{ doc.review_status.value }}
+              </span>
+            </td>
+            <td>
+              <a href="/documents/{{ doc.id }}" class="btn btn-sm btn-ghost">View</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div style="padding:1.5rem;text-align:center;color:#9ca3af;font-size:0.875rem">
+      No other documents uploaded yet.
+      <a href="/documents/upload" style="color:#4f46e5;margin-left:0.25rem">Upload one →</a>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

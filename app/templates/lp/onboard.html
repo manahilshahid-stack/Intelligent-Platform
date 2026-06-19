@@ -1,0 +1,85 @@
+{% extends "lp/base.html" %}
+
+{% block title %}Onboarding – Portfolio Intelligence{% endblock %}
+
+{% block body %}
+<div class="container wide">
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <h1 style="color: #667eea; margin-bottom: 0.5rem;">Welcome, {{ user.name }}!</h1>
+        <p style="color: #999;">Let's set up your profile in 3 simple questions</p>
+    </div>
+
+    <form method="post" action="/lp/onboard" class="main-content">
+        <!-- Question 1: Area of Interest -->
+        <div class="form-group">
+            <label style="font-size: 1.1rem; margin-bottom: 1rem; display: block;">
+                1. What are your areas of interest?
+                <span style="font-weight: 400; color: #999; font-size: 0.9rem;">(optional — select multiple)</span>
+            </label>
+            <div class="checkbox-group">
+                {% for area in interest_areas %}
+                <div class="checkbox-item">
+                    <input type="checkbox" id="area_{{ area }}" name="interest_areas" value="{{ area }}">
+                    <label for="area_{{ area }}" style="margin-bottom: 0;">
+                        {{ area.replace('_', ' ').title() }}
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Question 2: Looking For -->
+        <div class="form-group">
+            <label style="font-size: 1.1rem; margin-bottom: 1rem; display: block;">
+                2. What are you primarily looking for?
+                <span style="font-weight: 400; color: #999; font-size: 0.9rem;">(optional — select multiple)</span>
+            </label>
+            <div class="checkbox-group">
+                {% for option in looking_for_options %}
+                <div class="checkbox-item">
+                    <input type="checkbox" id="looking_{{ option }}" name="looking_for" value="{{ option }}">
+                    <label for="looking_{{ option }}" style="margin-bottom: 0;">
+                        {{ option.replace('_', ' ').title() }}
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Question 3: About Yourself -->
+        <div class="form-group">
+            <label style="font-size: 1.1rem; margin-bottom: 0.5rem; display: block;">
+                3. Tell us about yourself
+                <span style="font-weight: 400; color: #999; font-size: 0.9rem;">(optional)</span>
+            </label>
+            <textarea name="about_yourself" placeholder="Share a bit about your investment background, focus areas, or anything else you'd like us to know..."></textarea>
+        </div>
+
+        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+            <button type="submit" style="flex: 1;">Complete Setup</button>
+            <a href="/lp/dashboard" class="btn btn-secondary" style="flex: 1; text-align: center; text-decoration: none;">Skip for Now</a>
+        </div>
+    </form>
+
+    <div class="info-box" style="margin-top: 2rem;">
+        <p style="margin: 0;">💡 <strong>This information helps us personalize your experience</strong> and improve our recommendations over time. You can update it anytime from your dashboard.</p>
+    </div>
+
+    <script>
+        // Handle multi-select form submission
+        document.querySelector('form').addEventListener('submit', function(e) {
+            // Convert checkboxes to comma-separated values
+            const interestAreas = Array.from(document.querySelectorAll('input[name="interest_areas"]:checked')).map(x => x.value);
+            const lookingFor = Array.from(document.querySelectorAll('input[name="looking_for"]:checked')).map(x => x.value);
+            
+            // Create hidden inputs for form submission
+            if (interestAreas.length > 0) {
+                document.querySelector('input[name="interest_areas"]').value = interestAreas.join(',');
+            }
+            if (lookingFor.length > 0) {
+                document.querySelector('input[name="looking_for"]').value = lookingFor.join(',');
+            }
+        });
+    </script>
+</div>
+{% endblock %}

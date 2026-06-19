@@ -1,0 +1,570 @@
+{% extends "lp/base.html" %}
+
+{% block title %}Chat – Portfolio Intelligence LP Portal{% endblock %}
+
+{% block head %}
+<style>
+* {
+    box-sizing: border-box;
+}
+
+/* ── Container & Layout ────────────────────────────────────────────────────── */
+.chat-wrapper {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 180px);
+    gap: 0;
+    background: #f5f7fa;
+}
+
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    padding: 1rem;
+    background: #ffffff;
+}
+
+/* ── Message Container ─────────────────────────────────────────────────────── */
+.message {
+    display: flex;
+    gap: 0.75rem;
+    animation: slideIn 0.3s ease-out;
+    align-items: flex-start;
+}
+
+.message.user {
+    justify-content: flex-end;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ── Message Bubble - User ─────────────────────────────────────────────────── */
+.message.user .message-bubble {
+    max-width: 55%;
+    padding: 0.8rem 1rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 12px;
+    border-bottom-right-radius: 2px;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    word-wrap: break-word;
+    font-weight: 500;
+}
+
+/* ── Message Bubble - Assistant ────────────────────────────────────────────── */
+.message.assistant .message-bubble {
+    max-width: 75%;
+    padding: 1rem;
+    background: #f8f9fa;
+    color: #2c3e50;
+    border-radius: 12px;
+    border-bottom-left-radius: 2px;
+    border: 1px solid #e1e5eb;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    word-wrap: break-word;
+}
+
+.message-bubble {
+    word-break: break-word;
+    white-space: normal;
+    overflow-wrap: break-word;
+}
+
+/* ── Text Formatting in Response ───────────────────────────────────────────── */
+.message-bubble > * {
+    margin: 0.6rem 0;
+}
+
+.message-bubble > *:first-child {
+    margin-top: 0;
+}
+
+.message-bubble > *:last-child {
+    margin-bottom: 0;
+}
+
+.message-bubble h1,
+.message-bubble h2,
+.message-bubble h3,
+.message-bubble h4 {
+    margin: 1.2rem 0 0.6rem 0;
+    font-weight: 700;
+    color: #2c3e50;
+    line-height: 1.4;
+}
+
+.message-bubble h1 {
+    font-size: 1.4rem;
+    border-bottom: 2px solid #667eea;
+    padding-bottom: 0.4rem;
+}
+
+.message-bubble h2 {
+    font-size: 1.25rem;
+    border-bottom: 2px solid #667eea;
+    padding-bottom: 0.4rem;
+}
+
+.message-bubble h3 {
+    font-size: 1.1rem;
+    color: #667eea;
+    font-weight: 700;
+}
+
+.message-bubble h4 {
+    font-size: 1rem;
+    color: #5a6b7d;
+}
+
+.message-bubble p {
+    margin: 0.6rem 0;
+    line-height: 1.7;
+}
+
+.message-bubble strong {
+    font-weight: 700;
+    color: #2c3e50;
+}
+
+.message-bubble em,
+.message-bubble i {
+    font-style: italic;
+    color: #5a6b7d;
+}
+
+/* ── Links (CLICKABLE) ─────────────────────────────────────────────────────── */
+.message-bubble a {
+    color: #667eea;
+    text-decoration: none;
+    font-weight: 600;
+    border-bottom: 1px solid #667eea;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.message-bubble a:hover {
+    color: #764ba2;
+    border-bottom-color: #764ba2;
+    background-color: rgba(102, 126, 234, 0.08);
+    padding: 0.1rem 0.2rem;
+    border-radius: 2px;
+}
+
+/* ── Lists ────────────────────────────────────────────────────────────────── */
+.message-bubble ul,
+.message-bubble ol {
+    margin: 0.8rem 0;
+    padding-left: 2rem;
+    list-style-position: outside;
+}
+
+.message-bubble li {
+    margin: 0.4rem 0;
+    line-height: 1.7;
+    margin-left: 0;
+}
+
+.message-bubble li strong {
+    display: inline;
+    color: #2c3e50;
+}
+
+.message-bubble ul ul,
+.message-bubble ol ol,
+.message-bubble ul ol,
+.message-bubble ol ul {
+    margin-top: 0.4rem;
+    margin-bottom: 0.4rem;
+    padding-left: 2rem;
+}
+
+/* ── Code Blocks ──────────────────────────────────────────────────────────── */
+.message-bubble code {
+    background: #e8edf5;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    color: #764ba2;
+    word-break: break-word;
+}
+
+.message-bubble pre {
+    background: #2c3e50;
+    color: #ecf0f1;
+    padding: 1rem;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 0.8rem 0;
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+.message-bubble pre code {
+    background: none;
+    color: #ecf0f1;
+    padding: 0;
+    font-size: inherit;
+}
+
+/* ── Blockquotes ──────────────────────────────────────────────────────────── */
+.message-bubble blockquote {
+    border-left: 4px solid #667eea;
+    padding: 0.6rem 0.8rem;
+    margin: 0.8rem 0;
+    background: #f0f2ff;
+    font-style: italic;
+    color: #5a6b7d;
+    line-height: 1.7;
+}
+
+.message-bubble hr {
+    border: none;
+    border-top: 2px solid #e1e5eb;
+    margin: 1rem 0;
+}
+
+/* ── Input Section ─────────────────────────────────────────────────────────── */
+.chat-input-wrapper {
+    display: flex;
+    gap: 0.5rem;
+    padding: 1rem;
+    background: #ffffff;
+    border-top: 1px solid #e1e5eb;
+}
+
+.chat-input-wrapper input {
+    flex: 1;
+    padding: 0.7rem 0.95rem;
+    border: 1px solid #dde4eb;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    transition: all 0.2s ease;
+    background: #fafbfc;
+}
+
+.chat-input-wrapper input:focus {
+    outline: none;
+    border-color: #667eea;
+    background: #ffffff;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.08);
+}
+
+.chat-input-wrapper input::placeholder {
+    color: #a8b4c5;
+}
+
+.chat-input-wrapper button {
+    padding: 0.7rem 1.4rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.25);
+}
+
+.chat-input-wrapper button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
+}
+
+.chat-input-wrapper button:active {
+    transform: translateY(0);
+}
+
+/* ── Empty State ───────────────────────────────────────────────────────────── */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #a8b4c5;
+    text-align: center;
+    padding: 2rem;
+}
+
+.empty-state-icon {
+    font-size: 3rem;
+    margin-bottom: 0.8rem;
+    opacity: 0.7;
+}
+
+.empty-state h3 {
+    color: #2c3e50;
+    margin-bottom: 0.4rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.empty-state p {
+    max-width: 380px;
+    line-height: 1.5;
+    color: #7f8a9d;
+    font-size: 0.85rem;
+}
+
+/* ── Dashboard Button ──────────────────────────────────────────────────────── */
+.btn-link {
+    background: none;
+    border: none;
+    color: #667eea;
+    cursor: pointer;
+    text-decoration: none;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    gap: 0.3rem;
+}
+
+.btn-link:hover {
+    color: #764ba2;
+    transform: translateX(-2px);
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────── */
+.chat-messages::-webkit-scrollbar {
+    width: 6px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+    background: #f0f2f5;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+    background: #dde4eb;
+    border-radius: 3px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+    background: #c5cdd9;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .message-bubble,
+    .message.assistant .message-bubble,
+    .message.user .message-bubble {
+        max-width: 85%;
+    }
+}
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="container wide">
+    <!-- Top Bar -->
+    <div class="topbar">
+        <div>
+            <h2>Portfolio Chat</h2>
+        </div>
+        <div class="topbar-actions">
+            <div class="topbar-user">
+                {{ user.name }}
+            </div>
+            <a href="/lp/dashboard" class="btn btn-link">← Dashboard</a>
+            <form method="post" action="/lp/chat/clear" style="margin: 0;">
+                <button type="submit" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem;">Clear Chat</button>
+            </form>
+            <form method="post" action="/lp/logout" style="margin: 0;">
+                <button type="submit" class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem;">Sign Out</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Chat Wrapper -->
+    <div class="chat-wrapper">
+        <!-- Messages -->
+        <div class="chat-messages" id="chatMessages">
+            {% if enriched_messages %}
+                {% for item in enriched_messages %}
+                <div class="message {% if item.msg.role == 'user' %}user{% else %}assistant{% endif %}">
+                    <div class="message-bubble" data-markdown="{% if item.msg.role == 'assistant' %}true{% else %}false{% endif %}" data-content="{{ item.msg.content | e }}">
+                        <!-- Content will be populated by JS for assistant, or shown as-is for user -->
+                        {% if item.msg.role == 'user' %}
+                            {{ item.msg.content }}
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-state-icon">💬</div>
+                <h3>Start Asking</h3>
+                <p>Ask about portfolio companies, investment themes, or portfolio updates.</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Input -->
+        <form method="post" action="/lp/chat" class="chat-input-wrapper">
+            <input 
+                type="text" 
+                name="message" 
+                placeholder="Ask about portfolio companies, themes..." 
+                autocomplete="off"
+                required
+            >
+            <button type="submit">Send</button>
+        </form>
+    </div>
+
+    <script>
+        /**
+         * Improved markdown to HTML converter
+         * Properly handles: headings, bold, italic, lists, links, code, blockquotes
+         */
+        function markdownToHtml(text) {
+            let html = text;
+
+            // ─ HEADINGS (must be at line start)
+            html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
+            html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
+            html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+
+            // ─ HORIZONTAL RULES
+            html = html.replace(/^---$/gm, '<hr>');
+
+            // ─ CODE BLOCKS (triple backticks) - process before inline code
+            html = html.replace(/```(.*?)```/gs, (match, code) => {
+                const escaped = code.trim()
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+                return `<pre><code>${escaped}</code></pre>`;
+            });
+
+            // ─ BLOCKQUOTES (must be at line start)
+            html = html.replace(/^> (.*?)$/gm, '<blockquote>$1</blockquote>');
+
+            // ─ LINKS [text](url) - BEFORE other escaping
+            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, url) => {
+                const escaped = url
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+                return `<a href="${escaped}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+            });
+
+            // ─ BOLD (must be before italic)
+            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/__(.*?)__/g, '<strong>$1</strong>');
+
+            // ─ ITALIC - carefully to avoid false matches
+            html = html.replace(/(?<!\*)\*(?!\*)([^\*]+)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
+            html = html.replace(/(?<!_)_(?!_)([^_]+)(?<!_)_(?!_)/g, '<em>$1</em>');
+
+            // ─ INLINE CODE
+            html = html.replace(/`([^`]+)`/g, (match, code) => {
+                const escaped = code
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+                return `<code>${escaped}</code>`;
+            });
+
+            // ─ UNORDERED LISTS
+            const lines = html.split('\n');
+            let inList = false;
+            let listHtml = '';
+            let output = [];
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const listMatch = line.match(/^\s*[-*] (.*?)$/);
+
+                if (listMatch) {
+                    if (!inList) {
+                        inList = true;
+                        listHtml = '<ul>';
+                    }
+                    listHtml += `<li>${listMatch[1]}</li>`;
+                } else {
+                    if (inList) {
+                        listHtml += '</ul>';
+                        output.push(listHtml);
+                        inList = false;
+                        listHtml = '';
+                    }
+                    if (line.trim()) {
+                        output.push(line);
+                    }
+                }
+            }
+
+            if (inList) {
+                listHtml += '</ul>';
+                output.push(listHtml);
+            }
+
+            html = output.join('\n');
+
+            // ─ PARAGRAPHS - wrap text in <p> tags
+            const blocks = html.split(/\n\n+/);
+            html = blocks.map(block => {
+                block = block.trim();
+                // Skip if already a block element
+                if (block.match(/^<(h[1-6]|ul|ol|pre|blockquote|li|hr)/)) {
+                    return block;
+                }
+                // Skip empty blocks
+                if (!block) return '';
+                // Replace single newlines with <br>
+                block = block.replace(/\n/g, '<br>');
+                // Wrap in paragraph
+                if (!block.match(/^</)) {
+                    return `<p>${block}</p>`;
+                }
+                return block;
+            }).filter(b => b).join('');
+
+            return html;
+        }
+
+        // Apply markdown conversion AFTER DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.message-bubble[data-markdown="true"]').forEach(bubble => {
+                const markdown = bubble.getAttribute('data-content');
+                if (markdown) {
+                    // Convert markdown to HTML
+                    const htmlContent = markdownToHtml(markdown);
+                    // Set innerHTML to render the HTML
+                    bubble.innerHTML = htmlContent;
+                }
+            });
+
+            // Auto-scroll to bottom
+            const messagesDiv = document.querySelector('.chat-messages');
+            if (messagesDiv) {
+                setTimeout(() => {
+                    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                }, 100);
+            }
+        });
+    </script>
+</div>
+{% endblock %}
