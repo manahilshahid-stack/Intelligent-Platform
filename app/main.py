@@ -30,8 +30,19 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     log.info("Running startup migrations…")
     run_migrations()
+    # Start the automatic re-index scheduler (no-op if ENABLE_SCHEDULER=0).
+    try:
+        from .services.scheduler import start_scheduler
+        start_scheduler()
+    except Exception as exc:  # never block startup on the scheduler
+        log.warning("Scheduler failed to start: %s", exc)
     log.info("App ready.")
     yield
+    try:
+        from .services.scheduler import shutdown_scheduler
+        shutdown_scheduler()
+    except Exception:
+        pass
 
 
 app = FastAPI(title="Portfolio Intelligence Platform", lifespan=lifespan)

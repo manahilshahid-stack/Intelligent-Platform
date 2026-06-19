@@ -570,7 +570,12 @@ def index_crm_note(crm_note_id: int, db) -> int:
     if not windows:
         return 0
 
-    # Remove old source + chunks for this note
+    # Build every window's body first (header + window text). These are the
+    # exact strings we embed, and they also let us detect "nothing changed".
+    chunk_bodies = [
+        (f"{header}\n\n{w}".strip() if header else w) for w in windows
+    ]
+
     from sqlalchemy import select as _sel, delete as _del
     old_source = db.scalar(
         _sel(KnowledgeSource).where(
@@ -578,7 +583,21 @@ def index_crm_note(crm_note_id: int, db) -> int:
             KnowledgeSource.source_id == crm_note_id,
         )
     )
+
+    # ── Skip-unchanged ───────────────────────────────────────────────────────
+    # If this note is already indexed with identical chunk text, do nothing —
+    # no embedding and no sanitization API calls. This is what makes the
+    # scheduled re-index cheap: only new or edited notes ever hit the API.
     if old_source:
+        existing_texts = list(db.scalars(
+            _sel(KnowledgeChunk.text)
+            .where(KnowledgeChunk.knowledge_source_id == old_source.id)
+            .order_by(KnowledgeChunk.id)
+        ).all())
+        if existing_texts == chunk_bodies:
+            log.debug("index_crm_note: note %d unchanged — skipping re-embed", crm_note_id)
+            return 0
+        # Changed → drop the stale source + chunks and rebuild below.
         db.execute(_del(KnowledgeChunk).where(KnowledgeChunk.knowledge_source_id == old_source.id))
         db.delete(old_source)
         db.flush()
@@ -596,11 +615,7 @@ def index_crm_note(crm_note_id: int, db) -> int:
     db.add(source)
     db.flush()
 
-    # Build every window's body first, then embed them all in ONE batched
-    # request instead of one request per window (the main speed-up).
-    chunk_bodies = [
-        (f"{header}\n\n{w}".strip() if header else w) for w in windows
-    ]
+    # Embed all windows in ONE batched request instead of one per window.
     try:
         vectors = embed_texts(chunk_bodies, api_key)
     except Exception as exc:
