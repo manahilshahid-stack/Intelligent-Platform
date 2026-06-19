@@ -787,6 +787,125 @@ def _matches_focus(c: ChunkResult, focus: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Structured enumeration: "list / which / how many <sector> companies"
+# ---------------------------------------------------------------------------
+# Semantic top-k can only surface a handful of chunks, so "list all the robotics
+# companies" returns 5-6, never the full set and never the most recent. For that
+# class of question we instead run a STRUCTURED query: filter ventures by their
+# Attio sector/category, return ALL matches, newest-first, with a total count.
+
+import re as _re
+
+_ENTITY_RE = r"(?:companies|company|startups|startup|ventures|venture|deals|businesses|firms|portcos)"
+_LIST_CUES = (
+    "list", "all", "which", "how many", "name", "show", "what are", "give me",
+    "tell me about", "every", "overview of", "summary of", "across",
+)
+_INTENT_FILLERS = {
+    "the", "all", "about", "me", "tell", "which", "how", "many", "list", "show",
+    "of", "our", "your", "these", "those", "analyzed", "analysed", "a", "an",
+    "that", "they", "have", "has", "we", "you", "portfolio", "are", "is", "do",
+    "does", "what", "give", "name", "every", "been", "worked", "with", "on",
+    "looked", "at", "seen", "evaluated", "reviewed", "their", "his", "her",
+}
+# Lines in the indexed venture text that carry the sector/category labels.
+_SECTOR_LINE_PREFIXES = ("sectors:", "sector:", "categories:", "category:", "industry:")
+
+
+def detect_category_list_intent(query: str) -> str | None:
+    """
+    If *query* is an enumeration filtered by a sector/category (e.g. "list all the
+    robotics companies", "how many fintech startups"), return the category term
+    (lowercased). Otherwise None. Conservative: needs both a list cue and an
+    entity word, and returns a term only if it's specific enough (>=3 chars).
+    """
+    q = " " + (query or "").lower().strip() + " "
+    if not _re.search(rf"\b{_ENTITY_RE}\b", q):
+        return None
+    if not any(cue in q for cue in _LIST_CUES):
+        return None
+    m = _re.search(rf"([a-z0-9/&\-\. ]+?)\s+{_ENTITY_RE}\b", q)
+    if not m:
+        return None
+    toks = [t for t in _re.findall(r"[a-z0-9/&\-\.]+", m.group(1)) if t not in _INTENT_FILLERS]
+    if not toks:
+        return None
+    term = toks[-1].strip("./-&")
+    return term if len(term) >= 3 else None
+
+
+def list_ventures_by_category(db: "Session", term: str, limit: int = 50) -> tuple[list[dict], int]:
+    """
+    Return (rows, total) for every venture whose Attio Sectors/Categories/Industry
+    line contains *term*, newest-first by latest note date (fallback: sync date).
+
+    rows: [{name, attio_url, stage, last_activity (datetime|None)}] capped at *limit*.
+    total: full count of matches (so the caller can say "showing 50 of N").
+    No embeddings or LLM calls — pure structured lookup.
+    """
+    from sqlalchemy import func
+    from ..models import KnowledgeChunk, CrmVenture, CrmNote
+
+    term_l = (term or "").lower().strip()
+    if not term_l:
+        return [], 0
+
+    # Scan indexed venture chunks; match the term on a sector/category line, or
+    # on the (future) populated sector column.
+    rows = db.execute(
+        select(KnowledgeChunk.crm_venture_id, KnowledgeChunk.text, KnowledgeChunk.sector)
+        .where(
+            KnowledgeChunk.source_type == "crm_venture",
+            KnowledgeChunk.crm_venture_id.is_not(None),
+        )
+    ).all()
+
+    matched: set[int] = set()
+    for vid, text, sector in rows:
+        if sector and term_l in sector.lower():
+            matched.add(vid)
+            continue
+        for line in (text or "").splitlines():
+            ls = line.strip().lower()
+            if ls.startswith(_SECTOR_LINE_PREFIXES) and term_l in ls:
+                matched.add(vid)
+                break
+    if not matched:
+        return [], 0
+
+    ventures = {
+        v.id: v
+        for v in db.scalars(select(CrmVenture).where(CrmVenture.id.in_(matched))).all()
+    }
+    note_dates: dict[int, object] = dict(
+        db.execute(
+            select(CrmNote.crm_venture_id, func.max(CrmNote.created_at_attio))
+            .where(CrmNote.crm_venture_id.in_(matched))
+            .group_by(CrmNote.crm_venture_id)
+        ).all()
+    )
+
+    import datetime as _dt
+    _floor = _dt.datetime.min
+
+    items: list[dict] = []
+    for vid in matched:
+        v = ventures.get(vid)
+        if not v:
+            continue
+        last = note_dates.get(vid) or getattr(v, "created_at", None)
+        items.append({
+            "name": v.name or "Unknown",
+            "attio_url": getattr(v, "attio_url", None),
+            "stage": getattr(v, "stage", None),
+            "last_activity": last,
+        })
+
+    items.sort(key=lambda x: (x["last_activity"] or _floor), reverse=True)
+    return items[:limit], len(items)
+
+
 def retrieve_for_chat(
     query: str,
     user: "User",

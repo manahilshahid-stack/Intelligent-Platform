@@ -173,12 +173,53 @@ async def chat_submit(
  
     api_key = get_openrouter_api_key(db)
  
-    if not api_key:
+    # ── Structured enumeration shortcut ─────────────────────────────────────
+    # "list / which / how many <sector> companies" is an enumeration, not a
+    # similarity question. Semantic top-k only returns ~8 chunks (a handful of
+    # companies) and never the most recent. For these, answer deterministically
+    # and completely straight from the CRM, newest-first. (Admins only — we do
+    # not enumerate the pipeline for LP / company users.)
+    from ..services.retrieval import detect_category_list_intent, list_ventures_by_category
+    enum_term = detect_category_list_intent(message) if is_admin else None
+    enum_items: list[dict] = []
+    enum_total = 0
+    if enum_term:
+        try:
+            enum_items, enum_total = list_ventures_by_category(db, enum_term, limit=50)
+        except Exception as exc:
+            log.warning("Enumeration failed for %r: %s", enum_term, exc)
+
+    if enum_term and enum_total:
+        def _fmt_date(d):
+            try:
+                return d.strftime("%b %Y")
+            except Exception:
+                return "—"
+        lines = []
+        for i, it in enumerate(enum_items, start=1):
+            stg = f" · {it['stage']}" if it.get("stage") else ""
+            lines.append(
+                f"{i}. {it['name']} (last activity {_fmt_date(it.get('last_activity'))}{stg})"
+            )
+        shown = len(enum_items)
+        plural = "y" if enum_total == 1 else "ies"
+        header = f"Merantix has {enum_total} compan{plural} tagged “{enum_term}”"
+        if shown < enum_total:
+            header += f" — showing the {shown} most recent"
+        header += ":"
+        assistant_reply = header + "\n\n" + "\n".join(lines)
+        if shown < enum_total:
+            assistant_reply += (
+                f"\n\n(Showing {shown} of {enum_total}, newest first. "
+                f"Ask me to narrow by stage or year for a shorter list.)"
+            )
+        citations: list[dict] = []
+    elif not api_key:
         assistant_reply = (
             "The OpenRouter API key is not configured. "
             "Ask an admin to add it under Admin → Settings."
         )
-        citations: list[dict] = []
+        citations = []
     else:
         retrieval_filters = {}
         if filter_company_id:
