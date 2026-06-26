@@ -18,6 +18,7 @@ from .routes.document_routes import router as document_router
 from .routes.reporting_routes import router as reporting_router
 from .routes.review_routes import router as review_router
 from .routes.settings_routes import router as settings_router
+from .routes.webhook_routes import router as webhook_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,6 +61,7 @@ app.include_router(document_router)
 app.include_router(review_router)
 app.include_router(lp_auth_router)
 app.include_router(lp_chat_router)
+app.include_router(webhook_router)
 
 @app.get("/healthz")
 def healthz():

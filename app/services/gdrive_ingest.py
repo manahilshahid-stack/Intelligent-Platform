@@ -363,3 +363,199 @@ def ingest_external_documents(db) -> dict:
 
     log.info("ingest_external_documents: %s", summary)
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Drive changes.list() polling  (catches files added directly to Drive)
+# ---------------------------------------------------------------------------
+
+_DRIVE_TOKEN_SETTING_KEY = "drive_changes_page_token"
+
+_EXPORTABLE = {
+    "application/vnd.google-apps.document":     "text/plain",
+    "application/vnd.google-apps.presentation": "text/plain",
+    "application/vnd.google-apps.spreadsheet":  "text/csv",
+}
+
+
+def _get_drive_token(db) -> str | None:
+    """Load the saved Drive pageToken from app_settings."""
+    from ..models import AppSetting
+    from sqlalchemy import select
+    row = db.scalar(select(AppSetting).where(AppSetting.key == _DRIVE_TOKEN_SETTING_KEY))
+    return row.value if row else None
+
+
+def _save_drive_token(db, token: str) -> None:
+    """Persist the latest Drive pageToken into app_settings."""
+    from ..models import AppSetting
+    from sqlalchemy import select
+    row = db.scalar(select(AppSetting).where(AppSetting.key == _DRIVE_TOKEN_SETTING_KEY))
+    if row:
+        row.value = token
+    else:
+        db.add(AppSetting(key=_DRIVE_TOKEN_SETTING_KEY, value=token))
+    db.commit()
+
+
+def _get_drive_start_token(token: str) -> str:
+    """Call Drive API to get the current startPageToken."""
+    resp = httpx.get(
+        "https://www.googleapis.com/drive/v3/changes/startPageToken",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json().get("startPageToken", "")
+
+
+def poll_drive_changes(db) -> dict:
+    """
+    Fetch all Drive file changes since the last saved pageToken and ingest
+    any new or modified files that have not yet been seen (or whose content
+    has changed since last fetch).
+
+    Requires GOOGLE_SERVICE_ACCOUNT_JSON to be configured (same as the rest
+    of the Drive ingest). Safe to call repeatedly — skips unchanged files via
+    the sha256 check on ExternalDocument.
+
+    Returns a summary dict: {changed, ingested, skipped, errors}.
+    """
+    import os, json as _json
+    from sqlalchemy import select as _sel
+    from ..models import ExternalDocument, ExternalDocStatus
+
+    # ── Auth ──────────────────────────────────────────────────────────────────
+    access_token = _service_account_token(db)
+    if not access_token:
+        log.info("poll_drive_changes: no service-account configured — skipping Drive poll")
+        return {"changed": 0, "ingested": 0, "skipped": 0, "errors": 0}
+
+    auth = {"Authorization": f"Bearer {access_token}"}
+
+    # ── pageToken ──────────────────────────────────────────────────────────────
+    page_token = _get_drive_token(db)
+    if not page_token:
+        # First run — save current token and exit; pick up changes next time
+        try:
+            start = _get_drive_start_token(access_token)
+            _save_drive_token(db, start)
+            log.info("poll_drive_changes: first run — saved start token, will track from next poll")
+        except Exception as exc:
+            log.warning("poll_drive_changes: could not get start token: %s", exc)
+        return {"changed": 0, "ingested": 0, "skipped": 0, "errors": 0}
+
+    summary = {"changed": 0, "ingested": 0, "skipped": 0, "errors": 0}
+    new_token = page_token
+
+    # ── Iterate change pages ───────────────────────────────────────────────────
+    while page_token:
+        try:
+            resp = httpx.get(
+                "https://www.googleapis.com/drive/v3/changes",
+                headers=auth,
+                params={
+                    "pageToken": page_token,
+                    "fields": "nextPageToken,newStartPageToken,"
+                              "changes(fileId,removed,file(id,name,mimeType,webViewLink,trashed))",
+                    "spaces": "drive",
+                    "includeRemoved": "true",
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            log.error("poll_drive_changes: changes.list failed: %s", exc)
+            summary["errors"] += 1
+            break
+
+        for change in data.get("changes", []):
+            file_id = change.get("fileId")
+            removed = change.get("removed", False)
+            file_meta = change.get("file") or {}
+            trashed = file_meta.get("trashed", False)
+            mime = file_meta.get("mimeType", "")
+            name = file_meta.get("name", "")
+            view_url = file_meta.get("webViewLink", "")
+
+            summary["changed"] += 1
+
+            # Soft-delete knowledge chunks for removed/trashed files
+            if removed or trashed:
+                existing = db.scalar(
+                    _sel(ExternalDocument).where(ExternalDocument.file_id == file_id)
+                )
+                if existing:
+                    from ..models import KnowledgeChunk, KnowledgeSource
+                    from sqlalchemy import delete as _del
+                    old_src = db.scalar(
+                        _sel(KnowledgeSource).where(
+                            KnowledgeSource.source_type == "gdrive",
+                            KnowledgeSource.source_id == existing.id,
+                        )
+                    )
+                    if old_src:
+                        db.execute(_del(KnowledgeChunk).where(
+                            KnowledgeChunk.knowledge_source_id == old_src.id
+                        ))
+                        db.delete(old_src)
+                    existing.status = ExternalDocStatus.failed
+                    db.commit()
+                continue
+
+            # Only process exportable / text types
+            if mime not in _EXPORTABLE and not mime.startswith("text/"):
+                summary["skipped"] += 1
+                continue
+
+            # Build a synthetic link dict compatible with fetch_document
+            kind = "doc" if "document" in mime else \
+                   "slides" if "presentation" in mime else \
+                   "sheet" if "spreadsheet" in mime else "drive_file"
+            lk = {"kind": kind, "file_id": file_id, "url": view_url or f"https://drive.google.com/file/d/{file_id}"}
+
+            # Fetch content
+            text, status, file_type = fetch_document(lk, db)
+            if status != "fetched" or not text:
+                summary["skipped"] += 1
+                continue
+
+            new_sha = hashlib.sha256(text.encode("utf-8", "ignore")).hexdigest()
+
+            # Upsert ExternalDocument
+            doc = db.scalar(_sel(ExternalDocument).where(ExternalDocument.file_id == file_id))
+            if doc and doc.sha256 == new_sha:
+                # Content unchanged — skip re-embedding
+                summary["skipped"] += 1
+                continue
+
+            if doc is None:
+                doc = ExternalDocument(
+                    url=lk["url"], provider="gdrive", kind=kind,
+                    file_id=file_id, title=name,
+                )
+                db.add(doc)
+                db.commit()
+                db.refresh(doc)
+
+            doc.raw_text = text
+            doc.sha256 = new_sha
+            doc.status = ExternalDocStatus.fetched
+            doc.file_type = file_type
+            doc.fetched_at = datetime.utcnow()
+            db.commit()
+
+            try:
+                _index_external_doc(doc, db)
+                summary["ingested"] += 1
+            except Exception as exc:
+                log.error("poll_drive_changes: indexing failed for %s: %s", file_id, exc)
+                summary["errors"] += 1
+
+        new_token = data.get("newStartPageToken") or data.get("nextPageToken", new_token)
+        page_token = data.get("nextPageToken")  # None → we've consumed all pages
+
+    _save_drive_token(db, new_token)
+    log.info("poll_drive_changes: %s", summary)
+    return summary

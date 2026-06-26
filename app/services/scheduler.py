@@ -7,10 +7,14 @@ skip-unchanged check in the indexer, recurring runs only embed new or edited
 notes/files, so a daily run is cheap.
 
 Config (Railway env vars, all optional):
-  ENABLE_SCHEDULER   "1" (default) to run; "0" to disable.
-  REINDEX_CRON       crontab string. Default "0 3 * * *" (daily 03:00).
-  SCHEDULER_TZ       timezone for the cron. Default "UTC".
-  REINDEX_ON_STARTUP "1" to also run once ~1 min after boot. Default off.
+  ENABLE_SCHEDULER       "1" (default) to run; "0" to disable.
+  REINDEX_CRON           crontab string. Default "0 3 * * *" (daily 03:00).
+  SYNC_INTERVAL_MINUTES  if set, ALSO run a full refresh every N minutes
+                         (e.g. "15" for every 15 min). Useful when webhooks
+                         are not configured. Set to "0" or leave unset to
+                         rely on REINDEX_CRON only.
+  SCHEDULER_TZ           timezone for the cron. Default "UTC".
+  REINDEX_ON_STARTUP     "1" to also run once ~1 min after boot. Default off.
 
 Notes
 -----
@@ -94,6 +98,11 @@ def _ingest_gdrive(db):
     ingest_external_documents(db)
 
 
+def _poll_drive_changes(db):
+    from .gdrive_ingest import poll_drive_changes
+    poll_drive_changes(db)
+
+
 _STEPS = [
     ("sync ventures (Attio list)", _sync_ventures),
     ("index ventures", _index_ventures),
@@ -101,7 +110,8 @@ _STEPS = [
     ("index notes", _index_notes),
     ("sync files (Attio)", _sync_files),
     ("index files", _index_files),
-    ("ingest Google Drive docs", _ingest_gdrive),
+    ("ingest Google Drive docs (linked)", _ingest_gdrive),
+    ("poll Google Drive changes (direct uploads)", _poll_drive_changes),
 ]
 
 
@@ -146,6 +156,21 @@ def start_scheduler():
         misfire_grace_time=3600,
         replace_existing=True,
     )
+
+    # Optional: interval-based polling (runs every N minutes in addition to cron)
+    interval_minutes = int(os.getenv("SYNC_INTERVAL_MINUTES", "0") or "0")
+    if interval_minutes > 0:
+        from apscheduler.triggers.interval import IntervalTrigger
+        sched.add_job(
+            run_full_refresh,
+            trigger=IntervalTrigger(minutes=interval_minutes, timezone=tz),
+            id="interval_refresh",
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=3600,
+            replace_existing=True,
+        )
+        log.info("Scheduler: interval refresh every %d minutes enabled.", interval_minutes)
 
     if _truthy(os.getenv("REINDEX_ON_STARTUP", "0")):
         from datetime import datetime, timedelta, timezone as _tz

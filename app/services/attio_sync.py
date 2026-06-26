@@ -302,6 +302,159 @@ def sync_attio_list_ventures(db: Session, limit: int | None = None) -> CrmSyncRu
 
 
 # ---------------------------------------------------------------------------
+# Single-record / single-note targeted sync  (used by webhook handler)
+# ---------------------------------------------------------------------------
+
+def sync_single_note(attio_note_id: str, db: Session) -> int | None:
+    """
+    Fetch one Attio note by its note_id, upsert it into crm_notes, and
+    return the local crm_note.id (or None on failure).
+
+    Used by the webhook handler for immediate note.created / note.updated events.
+    """
+    from .attio_client import get_attio_api_key, get_attio_note_body, normalize_attio_note
+    from ..models import CrmNote, CrmVenture
+
+    api_key = get_attio_api_key(db)
+    if not api_key:
+        log.warning("sync_single_note: no API key configured")
+        return None
+
+    import httpx
+    try:
+        resp = httpx.get(
+            f"https://api.attio.com/v2/notes/{attio_note_id}",
+            headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        raw_note = resp.json().get("data", {})
+    except Exception as exc:
+        log.error("sync_single_note: API fetch failed for %s: %s", attio_note_id, exc)
+        return None
+
+    # Body may be inline or need a separate fetch
+    inline = (raw_note.get("content_plaintext") or "").strip()
+    content_text = inline if inline else get_attio_note_body(attio_note_id, api_key)
+
+    try:
+        normalized = normalize_attio_note(raw_note, content_text)
+    except Exception as exc:
+        log.error("sync_single_note: normalization failed: %s", exc)
+        return None
+
+    note_id = normalized.get("attio_note_id")
+    if not note_id:
+        return None
+
+    # Resolve crm_venture_id from the note's parent record_id
+    attio_record_id = normalized.get("attio_record_id")
+    crm_venture_id: int | None = None
+    if attio_record_id:
+        venture = db.scalar(
+            select(CrmVenture).where(CrmVenture.attio_record_id == attio_record_id)
+        )
+        crm_venture_id = venture.id if venture else None
+
+    import json as _json
+    raw_json = _json.dumps(raw_note, ensure_ascii=False, default=str)
+    now = datetime.utcnow()
+
+    existing = db.scalar(select(CrmNote).where(CrmNote.attio_note_id == note_id))
+    if existing:
+        existing.crm_venture_id = crm_venture_id
+        existing.attio_record_id = attio_record_id
+        existing.title = normalized.get("title")
+        existing.content_text = normalized.get("content_text")
+        existing.created_by = normalized.get("created_by")
+        existing.created_at_attio = normalized.get("created_at_attio")
+        existing.raw_note_json = raw_json
+        existing.synced_at = now
+        db.commit()
+        return existing.id
+    else:
+        note = CrmNote(
+            attio_note_id=note_id,
+            crm_venture_id=crm_venture_id,
+            attio_record_id=attio_record_id,
+            title=normalized.get("title"),
+            content_text=normalized.get("content_text"),
+            created_by=normalized.get("created_by"),
+            created_at_attio=normalized.get("created_at_attio"),
+            raw_note_json=raw_json,
+            synced_at=now,
+        )
+        db.add(note)
+        db.commit()
+        db.refresh(note)
+        return note.id
+
+
+def sync_single_venture(attio_record_id: str, object_slug: str, db: Session) -> int | None:
+    """
+    Fetch one Attio record by its record_id, upsert it into crm_ventures, and
+    return the local crm_venture.id (or None on failure).
+
+    Used by the webhook handler for immediate record.created / record.updated events.
+    """
+    from .attio_client import get_attio_api_key, get_attio_records_map, normalize_attio_list_entry
+    from .settings_service import get_attio_object_slug
+
+    api_key = get_attio_api_key(db)
+    if not api_key:
+        log.warning("sync_single_venture: no API key configured")
+        return None
+
+    slug = object_slug or get_attio_object_slug(db)
+
+    import httpx, json as _json
+    try:
+        resp = httpx.get(
+            f"https://api.attio.com/v2/objects/{slug}/records/{attio_record_id}",
+            headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        record = resp.json().get("data", {})
+    except Exception as exc:
+        log.error("sync_single_venture: API fetch failed for %s: %s", attio_record_id, exc)
+        return None
+
+    try:
+        from .attio_client import normalize_attio_record
+        normalized = normalize_attio_record(record)
+    except Exception as exc:
+        log.error("sync_single_venture: normalization failed: %s", exc)
+        return None
+
+    record_id_str = normalized.get("attio_record_id")
+    if not record_id_str:
+        return None
+
+    raw_json = _json.dumps(record, ensure_ascii=False, default=str)
+    now = datetime.utcnow()
+
+    existing = db.scalar(select(CrmVenture).where(CrmVenture.attio_record_id == record_id_str))
+    if existing:
+        _apply_fields(existing, normalized)
+        existing.raw_record_json = raw_json
+        existing.synced_at = now
+        db.commit()
+        return existing.id
+    else:
+        venture = CrmVenture(
+            attio_record_id=record_id_str,
+            raw_record_json=raw_json,
+            synced_at=now,
+        )
+        _apply_fields(venture, normalized)
+        db.add(venture)
+        db.commit()
+        db.refresh(venture)
+        return venture.id
+
+
+# ---------------------------------------------------------------------------
 # Object-record sync  (legacy fallback when no list is configured)
 # ---------------------------------------------------------------------------
 
