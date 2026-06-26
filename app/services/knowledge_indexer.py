@@ -623,10 +623,6 @@ def index_crm_note(crm_note_id: int, db) -> int:
         db.rollback()
         return 0
 
-    # Sanitize ONCE per note (was once per chunk — the dominant cost). The
-    # whole-note sanitized copy is reused for every window of this note.
-    note_sanitized = sanitize_text_llm(body, api_key) if body else None
-
     pending = []
     stored = 0
     for chunk_body, vec in zip(chunk_bodies, vectors):
@@ -637,7 +633,7 @@ def index_crm_note(crm_note_id: int, db) -> int:
             source_type="crm_note",
             source_id=crm_note_id,
             text=chunk_body,
-            sanitized_text=note_sanitized,
+            sanitized_text=None,
             embedding=_json.dumps(vec),
             sector=sector,
             themes_json=_json.dumps(themes) if themes else None,
@@ -723,8 +719,6 @@ def index_crm_file(crm_file_id: int, db) -> int:
         log.warning("index_crm_file: embedding failed for file %d: %s", crm_file_id, exc)
         return 0
 
-    sanitized = sanitize_text_llm(text_body, api_key)
-
     # Delete old source
     old_src = db.scalar(
         _sel(KnowledgeSource).where(
@@ -753,7 +747,7 @@ def index_crm_file(crm_file_id: int, db) -> int:
         source_id=crm_file_id,
         crm_venture_id=f.crm_venture_id,
         text=text_body,
-        sanitized_text=sanitized,
+        sanitized_text=None,
         embedding=embedding_json,
         sector=sector,
         themes_json=json.dumps(themes) if themes else None,

@@ -755,23 +755,10 @@ def redact_financials(results: list[ChunkResult]) -> list[ChunkResult]:
 
 def _apply_free_text_gate(results: list[ChunkResult]) -> list[ChunkResult]:
     """
-    For non-admin viewers, replace free-text CRM notes/files with their
-    sanitized copy. Fails closed: any note/file lacking a usable sanitized copy
-    is dropped entirely (its raw text is never exposed).
+    For non-admin viewers, serve all chunks as-is.
+    Financial/sensitive line redaction is handled downstream by redact_confidential.
     """
-    from ..services.knowledge_indexer import NO_SHAREABLE_CONTENT
-
-    gated: list[ChunkResult] = []
-    for c in results:
-        if c.source_type in _FREE_TEXT_SOURCES:
-            san = (c.sanitized_text or "").strip()
-            if san and san != NO_SHAREABLE_CONTENT:
-                c.text = san
-                gated.append(c)
-            # else: drop — never expose un-sanitized free text to non-admins
-        else:
-            gated.append(c)
-    return gated
+    return results
 
 
 def _matches_focus(c: ChunkResult, focus: str) -> bool:

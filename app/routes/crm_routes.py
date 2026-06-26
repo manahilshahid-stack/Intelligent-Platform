@@ -615,6 +615,54 @@ def crm_venture_detail(
 
 
 
+@router.post("/notes/backfill-sanitized", response_class=HTMLResponse)
+def trigger_notes_backfill_sanitized(
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Generate missing sanitized_text for all crm_note/crm_file chunks (LP-safe copies)."""
+    import threading
+    from ..models import CrmSyncRun, CrmSyncStatus
+    from datetime import datetime
+
+    run = CrmSyncRun(
+        sync_type="backfill_sanitized",
+        status=CrmSyncStatus.running,
+        started_at=datetime.utcnow(),
+        records_seen=0, records_created=0, records_updated=0,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    run_id = run.id
+
+    def _do():
+        from ..database import SessionLocal
+        from ..services.knowledge_indexer import backfill_sanitized_text
+        from ..services.attio_sync import _finish_run, _fail_run
+        bg = SessionLocal()
+        try:
+            bg_run = bg.get(CrmSyncRun, run_id)
+            result = backfill_sanitized_text(bg)
+            if bg_run:
+                updated = result.get("updated", 0)
+                _finish_run(bg_run, updated, updated, 0, bg)
+        except Exception as exc:
+            log.error("Backfill sanitized text error: %s", exc, exc_info=True)
+            try:
+                bg_run = bg.get(CrmSyncRun, run_id)
+                if bg_run and bg_run.status == CrmSyncStatus.running:
+                    _fail_run(bg_run, str(exc)[:2000], bg)
+            except Exception:
+                pass
+        finally:
+            bg.close()
+
+    threading.Thread(target=_do, daemon=True).start()
+    return RedirectResponse(f"/admin/crm/sync/progress/{run_id}", status_code=303)
+
+
 @router.post("/sync/kill-all")
 def kill_all_syncs(
     request: Request,
