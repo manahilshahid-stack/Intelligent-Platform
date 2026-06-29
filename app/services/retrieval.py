@@ -847,7 +847,7 @@ def detect_category_list_intent(query: str) -> str | None:
     return None
 
 
-_LP_PORTFOLIO_STAGES = {"portfolio", "action tracking"}  # stages visible to LPs
+_LP_PORTFOLIO_STAGES = {"portfolio"}  # only actual portfolio investments visible to LPs
 
 
 def list_ventures_by_category(db: "Session", term: str, limit: int = 50, lp_scope: bool = False) -> tuple[list[dict], int]:
@@ -1015,7 +1015,7 @@ def retrieve_for_chat(
             from sqlalchemy import func as _func
             portfolio_ids = set(db.scalars(
                 select(_CrmVenture.id).where(
-                    _func.lower(_CrmVenture.stage) == "portfolio"
+                    _func.lower(_CrmVenture.stage).in_(list(_LP_PORTFOLIO_STAGES))
                 )
             ).all())
             if portfolio_ids:
