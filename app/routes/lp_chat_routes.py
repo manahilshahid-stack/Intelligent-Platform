@@ -158,7 +158,19 @@ async def lp_chat_submit(
     from ..services.retrieval import (
         detect_category_list_intent, list_ventures_by_category, format_enumeration_answer,
     )
-    enum_term = detect_category_list_intent(message)
+    # Detect "portfolio companies" queries — always map to a full portfolio list
+    import re as _re
+    _PORTFOLIO_QUERY_RE = _re.compile(
+        r"\b(portfolio\s+compan|our\s+portfolio|your\s+portfolio|portfolio\s+invest|"
+        r"companies.*portfolio|portfolio.*companies|list.*portfolio|what.*invested|"
+        r"which.*invested|show.*portfolio)\b",
+        _re.I,
+    )
+    if _PORTFOLIO_QUERY_RE.search(message):
+        enum_term = "*"  # ALL_SENTINEL — list every portfolio-stage company
+    else:
+        enum_term = detect_category_list_intent(message)
+
     enum_items: list[dict] = []
     enum_total = 0
     if enum_term:
