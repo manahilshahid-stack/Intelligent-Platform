@@ -858,10 +858,9 @@ def list_ventures_by_category(db: "Session", term: str, limit: int = 50, lp_scop
     matched: set[int] = set()
 
     # LP scope: only surface portfolio-stage companies
+    from sqlalchemy import func as _func
     _stage_filter = (
-        CrmVenture.stage.in_([s.title() for s in _LP_PORTFOLIO_STAGES] +
-                              [s.capitalize() for s in _LP_PORTFOLIO_STAGES] +
-                              list(_LP_PORTFOLIO_STAGES))
+        _func.lower(CrmVenture.stage).in_(list(_LP_PORTFOLIO_STAGES))
         if lp_scope else None
     )
 
@@ -1015,20 +1014,21 @@ def retrieve_for_chat(
     # LP scope: drop chunks belonging to non-portfolio ventures
     if viewer_scope == "lp":
         from ..models import CrmVenture as _CrmVenture
+        from sqlalchemy import func as _func
         portfolio_ids = set(db.scalars(
             select(_CrmVenture.id).where(
-                _CrmVenture.stage.in_(
-                    [s.title() for s in _LP_PORTFOLIO_STAGES] +
-                    [s.capitalize() for s in _LP_PORTFOLIO_STAGES] +
-                    list(_LP_PORTFOLIO_STAGES)
-                )
+                _func.lower(_CrmVenture.stage).in_(list(_LP_PORTFOLIO_STAGES))
             )
         ).all())
-        combined = [
-            c for c in combined
-            if c.crm_venture_id is None  # keep portfolio docs (no venture link)
-            or c.crm_venture_id in portfolio_ids
-        ]
+        # Safety: if no portfolio ventures found in DB yet, don't filter at all
+        if portfolio_ids:
+            combined = [
+                c for c in combined
+                if c.crm_venture_id is None  # keep portfolio docs (no venture link)
+                or c.crm_venture_id in portfolio_ids
+            ]
+        else:
+            log.warning("retrieve_for_chat: no portfolio-stage ventures found — LP filter skipped")
 
     # Non-admins: swap free-text notes/files for their sanitized copy (or drop).
     if viewer_scope != "admin":
