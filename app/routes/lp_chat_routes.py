@@ -210,8 +210,8 @@ async def lp_chat_submit(
                 query=search_query,
                 user=temp_admin_user,
                 db=db,
-                limit=12,             # more grounding context (LP chunks are redacted, so each carries less)
-                viewer_scope="lp",   # docs + CRM with confidential fields stripped; notes/files sanitized
+                limit=25,            # enough to cover all 16 portfolio companies with room for notes
+                viewer_scope="lp",
                 focus_company=focus_company,
             )
             log.info(f"Retrieved {len(chunks)} chunks from database")

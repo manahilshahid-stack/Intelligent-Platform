@@ -75,7 +75,7 @@ _CANDIDATE_MULTIPLIER = 4
 _CANDIDATE_MIN = 30
 
 # Candidate pool size handed to the reranker before trimming to the final limit.
-_RERANK_POOL = 20
+_RERANK_POOL = 40
 
 _KW_STOPWORDS = {
     "the", "and", "for", "are", "with", "what", "which", "how", "that", "this",
@@ -847,7 +847,7 @@ def detect_category_list_intent(query: str) -> str | None:
     return None
 
 
-_LP_PORTFOLIO_STAGES = {"portfolio"}  # only actual portfolio investments visible to LPs
+_LP_PORTFOLIO_STAGE = "portfolio"  # Attio stage value for actual investments
 
 
 def list_ventures_by_category(db: "Session", term: str, limit: int = 50, lp_scope: bool = False) -> tuple[list[dict], int]:
@@ -871,7 +871,7 @@ def list_ventures_by_category(db: "Session", term: str, limit: int = 50, lp_scop
     # LP scope: only surface portfolio-stage companies
     from sqlalchemy import func as _func
     _stage_filter = (
-        _func.lower(CrmVenture.stage).in_(list(_LP_PORTFOLIO_STAGES))
+        _func.lower(CrmVenture.stage) == _LP_PORTFOLIO_STAGE
         if lp_scope else None
     )
 
@@ -1015,7 +1015,7 @@ def retrieve_for_chat(
             from sqlalchemy import func as _func
             portfolio_ids = set(db.scalars(
                 select(_CrmVenture.id).where(
-                    _func.lower(_CrmVenture.stage).in_(list(_LP_PORTFOLIO_STAGES))
+                    _func.lower(_CrmVenture.stage) == _LP_PORTFOLIO_STAGE
                 )
             ).all())
             if portfolio_ids:

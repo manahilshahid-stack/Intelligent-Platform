@@ -186,7 +186,7 @@ def call_chat(user_message: str, context: str, api_key: str,
         "model": _cfg.openrouter_chat_model,
         "messages": messages,
         "temperature": 0.2,
-        "max_tokens": 4000,
+        "max_tokens": 8000,
     }
 
     try:
