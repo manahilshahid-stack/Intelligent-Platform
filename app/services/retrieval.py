@@ -372,6 +372,15 @@ def retrieve_knowledge_chunks(
         stmt = stmt.where(KnowledgeChunk.company_id == int(filters["company_id"]))
         log.info(f"[DEBUG] Filtering by company_id: {filters['company_id']}")
 
+    # Apply crm_venture_ids filter (used by LP scope to restrict to portfolio ventures)
+    if "crm_venture_ids" in filters and filters["crm_venture_ids"]:
+        venture_id_list = list(filters["crm_venture_ids"])
+        stmt = stmt.where(
+            (KnowledgeChunk.crm_venture_id.is_(None)) |
+            (KnowledgeChunk.crm_venture_id.in_(venture_id_list))
+        )
+        log.info(f"[DEBUG] Filtering by {len(venture_id_list)} portfolio venture IDs")
+
     # ── Hybrid rank: vector + keyword fused with RRF ───────────────────────────
     pg_extra, pg_params = "", {}
     if "company_id" in filters:
@@ -996,6 +1005,25 @@ def retrieve_for_chat(
     # Gather a larger candidate pool so the reranker has something to sharpen.
     pool = max(limit, _RERANK_POOL)
 
+    # For LP scope, restrict knowledge retrieval to portfolio-stage ventures only
+    lp_filters = dict(filters or {})
+    if viewer_scope == "lp":
+        try:
+            from ..models import CrmVenture as _CrmVenture
+            from sqlalchemy import func as _func
+            portfolio_ids = set(db.scalars(
+                select(_CrmVenture.id).where(
+                    _func.lower(_CrmVenture.stage) == "portfolio"
+                )
+            ).all())
+            if portfolio_ids:
+                lp_filters["crm_venture_ids"] = portfolio_ids
+                log.info("retrieve_for_chat: LP scope — restricting to %d portfolio ventures", len(portfolio_ids))
+            else:
+                log.warning("retrieve_for_chat: no portfolio ventures found in DB — LP filter skipped")
+        except Exception as exc:
+            log.warning("retrieve_for_chat: could not build LP portfolio filter: %s", exc)
+
     portfolio: list[ChunkResult] = []
     knowledge: list[ChunkResult] = []
     try:
@@ -1005,7 +1033,7 @@ def retrieve_for_chat(
     except Exception as exc:
         log.warning("retrieve_for_chat: portfolio retrieval failed: %s", exc)
     try:
-        knowledge = retrieve_knowledge_chunks(query, user, db, filters=filters, limit=pool)
+        knowledge = retrieve_knowledge_chunks(query, user, db, filters=lp_filters, limit=pool)
     except Exception as exc:
         log.warning("retrieve_for_chat: knowledge retrieval failed: %s", exc)
 
