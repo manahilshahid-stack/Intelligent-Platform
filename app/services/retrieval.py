@@ -372,20 +372,22 @@ def retrieve_knowledge_chunks(
         stmt = stmt.where(KnowledgeChunk.company_id == int(filters["company_id"]))
         log.info(f"[DEBUG] Filtering by company_id: {filters['company_id']}")
 
-    # Apply crm_venture_ids filter (used by LP scope to restrict to portfolio ventures)
-    if "crm_venture_ids" in filters and filters["crm_venture_ids"]:
-        venture_id_list = list(filters["crm_venture_ids"])
-        stmt = stmt.where(
-            (KnowledgeChunk.crm_venture_id.is_(None)) |
-            (KnowledgeChunk.crm_venture_id.in_(venture_id_list))
-        )
-        log.info(f"[DEBUG] Filtering by {len(venture_id_list)} portfolio venture IDs")
-
     # ── Hybrid rank: vector + keyword fused with RRF ───────────────────────────
     pg_extra, pg_params = "", {}
     if "company_id" in filters:
         pg_extra = "company_id = :filt_cid"
         pg_params["filt_cid"] = int(filters["company_id"])
+
+    # Apply crm_venture_ids filter (LP portfolio scope) — must go into BOTH
+    # the ORM stmt (SQLite / Python-cosine path) AND pg_extra (pgvector path).
+    if "crm_venture_ids" in filters and filters["crm_venture_ids"]:
+        venture_id_list = list(filters["crm_venture_ids"])
+        stmt = stmt.where(KnowledgeChunk.crm_venture_id.in_(venture_id_list))
+        # Build an ANY() clause for the pgvector raw-SQL path
+        pg_params["portfolio_ids"] = venture_id_list
+        portfolio_clause = "crm_venture_id = ANY(:portfolio_ids)"
+        pg_extra = f"{pg_extra} AND {portfolio_clause}" if pg_extra else portfolio_clause
+        log.info("[DEBUG] LP portfolio filter: %d venture IDs via SQL + pgvector", len(venture_id_list))
 
     scored = _hybrid_rank(
         db, KnowledgeChunk, stmt, query, query_vec, limit,
