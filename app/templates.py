@@ -63,3 +63,6 @@ def tojson_filter(value, **kwargs) -> str:
 
 
 templates.env.filters["tojson"] = tojson_filter
+
+# Make enumerate available in Jinja2 templates
+templates.env.globals["enumerate"] = enumerate
