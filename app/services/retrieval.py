@@ -836,7 +836,10 @@ def detect_category_list_intent(query: str) -> str | None:
     return None
 
 
-def list_ventures_by_category(db: "Session", term: str, limit: int = 50) -> tuple[list[dict], int]:
+_LP_PORTFOLIO_STAGES = {"portfolio", "action tracking"}  # stages visible to LPs
+
+
+def list_ventures_by_category(db: "Session", term: str, limit: int = 50, lp_scope: bool = False) -> tuple[list[dict], int]:
     """
     Return (rows, total) for every venture whose Attio Sectors/Categories/Industry
     line contains *term*, newest-first by latest note date (fallback: sync date).
@@ -853,11 +856,20 @@ def list_ventures_by_category(db: "Session", term: str, limit: int = 50) -> tupl
         return [], 0
 
     matched: set[int] = set()
+
+    # LP scope: only surface portfolio-stage companies
+    _stage_filter = (
+        CrmVenture.stage.in_([s.title() for s in _LP_PORTFOLIO_STAGES] +
+                              [s.capitalize() for s in _LP_PORTFOLIO_STAGES] +
+                              list(_LP_PORTFOLIO_STAGES))
+        if lp_scope else None
+    )
+
     if term_l in (_ALL_SENTINEL, "all", "__all__"):
-        # Count/list EVERYTHING: every company in the pipeline that has a name.
-        matched = set(
-            db.scalars(select(CrmVenture.id).where(CrmVenture.name.is_not(None))).all()
-        )
+        stmt = select(CrmVenture.id).where(CrmVenture.name.is_not(None))
+        if _stage_filter is not None:
+            stmt = stmt.where(_stage_filter)
+        matched = set(db.scalars(stmt).all())
     else:
         # Scan indexed venture chunks; match the term on a sector/category line,
         # or on the (future) populated sector column.
@@ -877,6 +889,16 @@ def list_ventures_by_category(db: "Session", term: str, limit: int = 50) -> tupl
                 if ls.startswith(_SECTOR_LINE_PREFIXES) and term_l in ls:
                     matched.add(vid)
                     break
+
+        # LP scope: remove any non-portfolio ventures from matched set
+        if lp_scope and matched:
+            portfolio_ids = set(db.scalars(
+                select(CrmVenture.id).where(
+                    CrmVenture.id.in_(matched),
+                    _stage_filter,
+                )
+            ).all())
+            matched = matched & portfolio_ids
     if not matched:
         return [], 0
 
@@ -989,6 +1011,24 @@ def retrieve_for_chat(
         log.warning("retrieve_for_chat: knowledge retrieval failed: %s", exc)
 
     combined = portfolio + knowledge
+
+    # LP scope: drop chunks belonging to non-portfolio ventures
+    if viewer_scope == "lp":
+        from ..models import CrmVenture as _CrmVenture
+        portfolio_ids = set(db.scalars(
+            select(_CrmVenture.id).where(
+                _CrmVenture.stage.in_(
+                    [s.title() for s in _LP_PORTFOLIO_STAGES] +
+                    [s.capitalize() for s in _LP_PORTFOLIO_STAGES] +
+                    list(_LP_PORTFOLIO_STAGES)
+                )
+            )
+        ).all())
+        combined = [
+            c for c in combined
+            if c.crm_venture_id is None  # keep portfolio docs (no venture link)
+            or c.crm_venture_id in portfolio_ids
+        ]
 
     # Non-admins: swap free-text notes/files for their sanitized copy (or drop).
     if viewer_scope != "admin":

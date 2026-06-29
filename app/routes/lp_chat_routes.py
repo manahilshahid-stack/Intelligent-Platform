@@ -163,7 +163,7 @@ async def lp_chat_submit(
     enum_total = 0
     if enum_term:
         try:
-            enum_items, enum_total = list_ventures_by_category(db, enum_term, limit=50)
+            enum_items, enum_total = list_ventures_by_category(db, enum_term, limit=50, lp_scope=True)
         except Exception as exc:
             log.warning("LP enumeration failed for %r: %s", enum_term, exc)
 
