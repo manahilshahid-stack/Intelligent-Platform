@@ -314,6 +314,33 @@ def lp_logout(
 # Export helper for LP chat routes
 # ─────────────────────────────────────────────────────────────────────────────
 
+@router.get("/token-login")
+def lp_token_login(
+    token: str,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Exchange a Bearer token (from JS OTP flow) for a session cookie.
+    Called after the React-style OTP registration succeeds.
+    """
+    from ..auth import _token_hash as _th
+    h = _th(token)
+    row = db.scalar(
+        select(LPUserSession)
+        .where(LPUserSession.token_hash == h)
+        .where(LPUserSession.expires_at > datetime.utcnow())
+    )
+    if row is None:
+        return RedirectResponse("/lp/login?error=invalid_token", status_code=303)
+    user = db.get(LPUser, row.lp_user_id)
+    if not user:
+        return RedirectResponse("/lp/login", status_code=303)
+    next_url = "/lp/onboard" if not user.onboarding_completed else "/lp/dashboard"
+    response = RedirectResponse(next_url, status_code=303)
+    _set_lp_session_cookie(response, token)
+    return response
+
+
 def require_lp_login(
     user: Annotated[LPUser | None, Depends(_get_lp_current_user)],
 ) -> LPUser:

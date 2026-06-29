@@ -1,45 +1,237 @@
 {% extends "lp/base.html" %}
-
-{% block title %}Register as LP – Portfolio Intelligence{% endblock %}
+{% block title %}Register — Merantix Capital LP Portal{% endblock %}
 
 {% block body %}
-<div class="container">
-    <div class="logo">
-        <h1>Portfolio Intelligence</h1>
-        <p>Limited Partner Portal</p>
+<div class="page">
+  <!-- Topbar -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="/" id="backBtn" style="display:inline-flex;align-items:center;gap:0.375rem;font-size:0.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:0.18em;color:var(--muted);text-decoration:none;" onmouseover="this.style.color='var(--fg)'" onmouseout="this.style.color='var(--muted)'">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg> Back
+      </a>
+      <a href="/lp/login" class="logo-mark">
+        <div class="logo-box">Mx</div>
+        <span>Merantix Capital</span>
+      </a>
+      <div style="width:4rem;"></div>
     </div>
+  </header>
 
-    {% if error %}
-    <div class="error">{{ error }}</div>
-    {% endif %}
+  <!-- Steps container -->
+  <main class="mx-auto max-w-md px-6 py-16">
+    <div class="auth-card" id="cardDetails">
+      <!-- Progress -->
+      <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.625rem;font-weight:700;text-transform:uppercase;letter-spacing:0.18em;color:var(--muted);margin-bottom:1.5rem;">
+        <span id="prog1" style="color:var(--fg);">1 · Details</span>
+        <span style="height:1px;width:1.5rem;background:var(--border);"></span>
+        <span id="prog2">2 · Verify</span>
+        <span style="height:1px;width:1.5rem;background:var(--border);"></span>
+        <span id="prog3">3 · Onboarding</span>
+      </div>
 
-    <form method="post" action="/lp/register">
-        <div class="form-group">
-            <label for="name">Full Name *</label>
-            <input type="text" id="name" name="name" required placeholder="John Doe">
+      <span class="badge">Limited Partner</span>
+      <h1 id="cardTitle" style="font-size:1.75rem;font-weight:700;margin-bottom:0.375rem;">Create your account</h1>
+      <p id="cardSub" class="text-sm text-muted" style="margin-bottom:1.75rem;">Tell us who you are. Takes under a minute.</p>
+
+      <div id="errBox" style="display:none;" class="alert alert-error"></div>
+
+      <!-- Step 1: Details -->
+      <div id="step1">
+        <div class="inp-grid-2 mb-4">
+          <label class="field" style="margin-bottom:0;">
+            <span class="field-label">First name</span>
+            <input class="inp" id="firstName" type="text" required placeholder="Jane" />
+          </label>
+          <label class="field" style="margin-bottom:0;">
+            <span class="field-label">Last name</span>
+            <input class="inp" id="lastName" type="text" required placeholder="Doe" />
+          </label>
         </div>
+        <label class="field">
+          <span class="field-label">Work email</span>
+          <input class="inp" id="email" type="email" required placeholder="you@fund.com" />
+        </label>
+        <label class="field">
+          <span class="field-label">Password</span>
+          <input class="inp" id="password" type="password" required minlength="8" placeholder="Min 8 characters" />
+        </label>
+        <label class="field">
+          <span class="field-label">Company <span class="field-hint">Optional</span></span>
+          <input class="inp" id="company" type="text" placeholder="Your fund or firm" />
+        </label>
+        <button class="btn btn-primary mt-2" id="btn1" onclick="goStep2()">
+          Send verification code
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </button>
+        <p class="text-sm text-center text-muted mt-4">
+          Already registered?
+          <a href="/lp/login" style="font-weight:600;color:var(--fg);text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">Sign in</a>
+        </p>
+      </div>
 
-        <div class="form-group">
-            <label for="email">Email Address *</label>
-            <input type="email" id="email" name="email" required placeholder="you@example.com">
+      <!-- Step 2: OTP -->
+      <div id="step2" style="display:none;">
+        <div class="alert alert-info" id="otpInfo">
+          Code sent to <strong id="emailDisplay"></strong>. Check your inbox.
         </div>
-
-        <div class="form-group">
-            <label for="organization">Organization / Fund</label>
-            <input type="text" id="organization" name="organization" placeholder="Acme Ventures (optional)">
+        <div class="otp-row mb-4" id="otpInputs">
+          <input class="otp-inp" maxlength="1" inputmode="numeric" />
+          <input class="otp-inp" maxlength="1" inputmode="numeric" />
+          <input class="otp-inp" maxlength="1" inputmode="numeric" />
+          <input class="otp-inp" maxlength="1" inputmode="numeric" />
+          <input class="otp-inp" maxlength="1" inputmode="numeric" />
+          <input class="otp-inp" maxlength="1" inputmode="numeric" />
         </div>
-
-        <div class="form-group">
-            <label for="password">Password *</label>
-            <input type="password" id="password" name="password" required placeholder="Min. 8 characters">
-            <small style="color: #999; margin-top: 0.25rem; display: block;">Must be at least 8 characters long.</small>
+        <button class="btn btn-primary" id="btn2" onclick="verifyOtp()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Verify &amp; continue
+        </button>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:1.25rem;">
+          <button onclick="goBackDetails()" style="background:none;border:none;cursor:pointer;font-size:0.875rem;font-weight:600;color:var(--fg);text-decoration:underline;text-underline-offset:3px;">Change email</button>
+          <button id="resendBtn" onclick="resendOtp()" style="background:none;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:0.375rem;font-size:0.875rem;font-weight:600;color:var(--fg);text-decoration:underline;text-underline-offset:3px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 4v6h6M23 20v-6h-6M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+            Resend code
+          </button>
         </div>
-
-        <button type="submit" style="width: 100%; padding: 0.875rem;">Create Account</button>
-    </form>
-
-    <div class="link">
-        Already have an account? <a href="/lp/login">Sign in here</a>
+      </div>
     </div>
+  </main>
 </div>
+
+<script>
+const API = '';  // same origin
+let storedEmail = '';
+let cooldown = 0;
+
+function showErr(msg) {
+  const b = document.getElementById('errBox');
+  b.textContent = msg; b.style.display = 'flex';
+}
+function hideErr() { document.getElementById('errBox').style.display = 'none'; }
+
+async function goStep2() {
+  hideErr();
+  const fn = document.getElementById('firstName').value.trim();
+  const ln = document.getElementById('lastName').value.trim();
+  const em = document.getElementById('email').value.trim().toLowerCase();
+  const pw = document.getElementById('password').value;
+  const co = document.getElementById('company').value.trim();
+  if (!fn || !ln || !em || !pw) { showErr('All fields except Company are required.'); return; }
+  if (pw.length < 8) { showErr('Password must be at least 8 characters.'); return; }
+
+  const btn = document.getElementById('btn1');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Sending…';
+
+  try {
+    const res = await fetch(API + '/api/lp/register', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({first_name:fn, last_name:ln, email:em, company:co||'', password:pw})
+    });
+    const data = await res.json();
+    if (!res.ok) { showErr(data.detail || 'Registration failed.'); btn.disabled=false; btn.innerHTML='Send verification code <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>'; return; }
+
+    storedEmail = em;
+    document.getElementById('emailDisplay').textContent = em;
+
+    // Dev mode: show OTP inline
+    if (data.dev_code) {
+      document.getElementById('otpInfo').innerHTML = 'SMTP not configured — dev code: <strong style="font-family:monospace;letter-spacing:0.15em;">' + data.dev_code + '</strong>';
+      // Auto-fill OTP inputs
+      const inputs = document.querySelectorAll('.otp-inp');
+      data.dev_code.split('').forEach((d,i) => { if(inputs[i]) inputs[i].value = d; });
+    }
+
+    // Switch to step 2
+    document.getElementById('step1').style.display = 'none';
+    document.getElementById('step2').style.display = 'block';
+    document.getElementById('cardTitle').textContent = 'Check your inbox';
+    document.getElementById('cardSub').textContent = 'We sent a 6-digit code to ' + em + '. Enter it below.';
+    document.getElementById('prog2').style.color = 'var(--fg)';
+    document.getElementById('backBtn').href = '#';
+    document.getElementById('backBtn').onclick = function(e){ e.preventDefault(); goBackDetails(); };
+    setupOtpInputs();
+  } catch(e) {
+    showErr('Something went wrong. Please try again.');
+  }
+  btn.disabled = false;
+  btn.innerHTML = 'Send verification code <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>';
+}
+
+function goBackDetails() {
+  document.getElementById('step1').style.display = 'block';
+  document.getElementById('step2').style.display = 'none';
+  document.getElementById('cardTitle').textContent = 'Create your account';
+  document.getElementById('cardSub').textContent = 'Tell us who you are. Takes under a minute.';
+  document.getElementById('prog2').style.color = '';
+  hideErr();
+}
+
+function setupOtpInputs() {
+  const inputs = document.querySelectorAll('.otp-inp');
+  inputs.forEach((inp, i) => {
+    inp.addEventListener('input', () => {
+      inp.value = inp.value.replace(/\D/g,'').slice(-1);
+      if (inp.value && i < 5) inputs[i+1].focus();
+    });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && !inp.value && i > 0) inputs[i-1].focus();
+    });
+  });
+  // Paste support
+  inputs[0].addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text').replace(/\D/g,'').slice(0,6);
+    text.split('').forEach((d,i) => { if(inputs[i]) inputs[i].value = d; });
+    inputs[Math.min(text.length-1, 5)]?.focus();
+  });
+  inputs[0].focus();
+}
+
+async function verifyOtp() {
+  hideErr();
+  const code = Array.from(document.querySelectorAll('.otp-inp')).map(i=>i.value).join('');
+  if (code.length < 6) { showErr('Enter all 6 digits.'); return; }
+
+  const btn = document.getElementById('btn2');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Verifying…';
+
+  try {
+    const res = await fetch(API + '/api/lp/verify-otp', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({email: storedEmail, code})
+    });
+    const data = await res.json();
+    if (!res.ok) { showErr(data.detail || 'Invalid or expired code.'); btn.disabled=false; btn.innerHTML='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Verify & continue'; return; }
+    // Exchange Bearer token for session cookie
+    window.location.href = '/lp/token-login?token=' + encodeURIComponent(data.token);
+  } catch(e) {
+    showErr('Something went wrong. Please try again.');
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Verify & continue';
+  }
+}
+
+async function resendOtp() {
+  if (cooldown > 0) return;
+  const btn = document.getElementById('resendBtn');
+  cooldown = 30;
+  btn.disabled = true;
+  const t = setInterval(() => {
+    cooldown--;
+    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 4v6h6M23 20v-6h-6M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg> Resend in ' + cooldown + 's';
+    if (cooldown <= 0) { clearInterval(t); btn.disabled=false; btn.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 4v6h6M23 20v-6h-6M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg> Resend code'; }
+  }, 1000);
+  try {
+    await fetch(API + '/api/lp/resend-otp', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({email: storedEmail, code: ''})
+    });
+  } catch {}
+}
+</script>
 {% endblock %}

@@ -1,10 +1,13 @@
 from __future__ import annotations
 from .routes.lp_auth_routes import router as lp_auth_router
 from .routes.lp_chat_routes import router as lp_chat_router
+from .routes.lp_api_routes import router as lp_api_router
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -48,6 +51,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Portfolio Intelligence Platform", lifespan=lifespan)
 
+# CORS — allow the React LP frontend to call the API
+_cors_origins = os.environ.get(
+    "CORS_ORIGINS",
+    "http://localhost:3000,http://localhost:5173,https://localhost:3000"
+).split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in _cors_origins],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 app.include_router(auth_router)
@@ -61,6 +77,7 @@ app.include_router(document_router)
 app.include_router(review_router)
 app.include_router(lp_auth_router)
 app.include_router(lp_chat_router)
+app.include_router(lp_api_router)
 app.include_router(webhook_router)
 
 @app.get("/healthz")
