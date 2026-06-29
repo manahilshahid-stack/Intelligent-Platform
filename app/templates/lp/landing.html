@@ -1,0 +1,554 @@
+{% extends "lp/base.html" %}
+{% block title %}Merantix Capital — Limited Partner Portal{% endblock %}
+
+{% block head %}
+<style>
+  /* ── Landing-specific overrides ───────────────────────────────────────────── */
+  body { overflow-x: hidden; }
+  .ambient-top, .ambient-bot { position: absolute; }
+
+  /* ── Topbar ───────────────────────────────────────────────────────────────── */
+  .lp-header {
+    position: relative; z-index: 20;
+    border-bottom: 1px solid rgba(17,17,17,0.1);
+  }
+  .lp-header-inner {
+    max-width: 80rem; margin: 0 auto;
+    padding: 0 1.5rem; height: 4rem;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  /* ── Hero ─────────────────────────────────────────────────────────────────── */
+  .hero {
+    position: relative; z-index: 10;
+    max-width: 80rem; margin: 0 auto;
+    padding: 4rem 1.5rem 3rem;
+  }
+  @media (min-width: 1024px) { .hero { padding-top: 6rem; } }
+  .hero-grid {
+    display: grid; gap: 2.5rem; align-items: start;
+  }
+  @media (min-width: 1024px) {
+    .hero-grid { grid-template-columns: 1.15fr 1fr; }
+  }
+
+  /* pill badge */
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    border: 1px solid rgba(17,17,17,0.15);
+    background: rgba(255,255,255,0.6); backdrop-filter: blur(8px);
+    border-radius: 999px; padding: 0.25rem 0.75rem;
+    font-size: 0.625rem; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.22em;
+    color: var(--muted);
+  }
+  .hero-badge-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent); flex-shrink: 0;
+  }
+
+  /* H1 */
+  .hero-h1 {
+    margin-top: 1.75rem;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(2.75rem, 7vw, 5rem);
+    font-weight: 700; line-height: 0.92; letter-spacing: -0.03em;
+  }
+  .highlight-marker {
+    background: linear-gradient(180deg, transparent 55%, var(--accent) 55%);
+    padding: 0 0.1em;
+  }
+  .accent-dot { color: var(--accent); }
+
+  /* hero sub */
+  .hero-sub {
+    margin-top: 1.75rem; max-width: 32rem;
+    font-size: 1rem; line-height: 1.7; color: var(--muted);
+  }
+  @media (min-width: 768px) { .hero-sub { font-size: 1.125rem; } }
+
+  /* hero CTA buttons */
+  .hero-ctas {
+    margin-top: 2.25rem; display: flex; flex-wrap: wrap;
+    align-items: center; gap: 0.75rem;
+  }
+  .cta-primary {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    background: var(--fg); color: #fff;
+    border-radius: 999px; padding: 0.875rem 1.5rem;
+    font-size: 0.875rem; font-weight: 600;
+    text-decoration: none; border: none; cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .cta-primary:hover { opacity: 0.88; }
+  .cta-secondary {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    border: 1px solid rgba(17,17,17,0.2);
+    background: rgba(255,255,255,0.6); backdrop-filter: blur(8px);
+    color: var(--fg); border-radius: 999px;
+    padding: 0.875rem 1.5rem;
+    font-size: 0.875rem; font-weight: 600;
+    text-decoration: none; transition: border-color 0.15s;
+  }
+  .cta-secondary:hover { border-color: rgba(17,17,17,0.4); }
+
+  /* trust row */
+  .trust-row {
+    margin-top: 2.5rem; display: flex; align-items: center; gap: 1.25rem;
+    font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.18em; color: var(--muted);
+  }
+  .trust-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--border); }
+  .trust-item { display: inline-flex; align-items: center; gap: 0.375rem; }
+
+  /* ── Chat card (hero right) ───────────────────────────────────────────────── */
+  .chat-card {
+    position: relative; overflow: hidden;
+    border-radius: 1.5rem; border: 1px solid rgba(255,255,255,0.1);
+    background: var(--fg); color: #fff;
+    padding: 1.75rem;
+    box-shadow: 0 10px 40px -12px rgba(0,0,0,0.25);
+  }
+  .chat-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.22em;
+    color: rgba(255,255,255,0.55);
+  }
+  .live-dot {
+    display: inline-flex; align-items: center; gap: 0.375rem;
+  }
+  .live-dot-circle {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    animation: pulse-live 2s ease-in-out infinite;
+  }
+  @keyframes pulse-live { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .chat-bubbles { margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem; }
+  .cb { display: flex; }
+  .cb.user { justify-content: flex-end; }
+  .cb-inner {
+    max-width: 85%; border-radius: 1rem;
+    padding: 0.625rem 1rem; font-size: 0.8125rem; line-height: 1.4;
+  }
+  .cb.user .cb-inner { background: #fff; color: var(--fg); border-top-right-radius: 2px; }
+  .cb.ai .cb-inner {
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.07); color: #fff;
+    border-top-left-radius: 2px;
+  }
+  .cb-loading { display: inline-flex; align-items: center; gap: 3px; height: 1rem; }
+  .cb-loading span {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent);
+    animation: pulse-dot 1.4s ease-in-out infinite;
+  }
+  .cb-loading span:nth-child(2) { animation-delay: 0.15s; }
+  .cb-loading span:nth-child(3) { animation-delay: 0.3s; }
+
+  .chat-card-footer {
+    margin-top: 1.5rem; display: flex; align-items: center; justify-content: space-between;
+    border-radius: 1rem; border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.06); padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+  }
+  .chat-card-footer-end { color: rgba(255,255,255,0.6); }
+  .email-pill {
+    display: inline-flex; align-items: center; gap: 0.375rem;
+    background: var(--accent); color: var(--fg);
+    border-radius: 999px; padding: 0.25rem 0.75rem;
+    font-size: 0.75rem; font-weight: 600;
+  }
+  .chat-card-glow {
+    pointer-events: none; position: absolute;
+    top: -3rem; right: -3rem;
+    width: 10rem; height: 10rem; border-radius: 50%;
+    background: rgba(212,245,60,0.22); filter: blur(2rem);
+  }
+
+  /* portfolio count badge */
+  .count-badge {
+    position: absolute; left: -1.5rem; bottom: -1.5rem;
+    display: none;
+    border-radius: 1rem; border: 1px solid rgba(17,17,17,0.1);
+    background: #fff; padding: 0.75rem 1rem;
+    box-shadow: 0 10px 40px -12px rgba(0,0,0,0.14);
+  }
+  @media (min-width: 768px) { .count-badge { display: block; } }
+  .count-badge-label {
+    font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.2em; color: var(--muted);
+  }
+  .count-badge-num {
+    margin-top: 0.25rem;
+    font-family: 'Space Grotesk', sans-serif; font-size: 1.5rem; font-weight: 700;
+  }
+
+  /* ── Marquee ──────────────────────────────────────────────────────────────── */
+  .marquee-section {
+    position: relative; z-index: 10;
+    border-top: 1px solid rgba(17,17,17,0.1);
+    border-bottom: 1px solid rgba(17,17,17,0.1);
+    background: rgba(255,255,255,0.4); backdrop-filter: blur(8px);
+    padding: 1.5rem 0;
+  }
+  .marquee-row { overflow: hidden; position: relative; }
+  .marquee-row + .marquee-row { margin-top: 0.75rem; }
+  .marquee-track {
+    display: flex; gap: 0.5rem; width: max-content; white-space: nowrap;
+  }
+  .marquee-track.fwd { animation: marquee 55s linear infinite; }
+  .marquee-track.rev { animation: marquee-rev 55s linear infinite; }
+  @keyframes marquee    { from{transform:translateX(0)} to{transform:translateX(-50%)} }
+  @keyframes marquee-rev{ from{transform:translateX(-50%)} to{transform:translateX(0)} }
+  .marquee-pill {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    border: 1px solid rgba(17,17,17,0.1); background: #fff;
+    border-radius: 999px; padding: 0.375rem 0.875rem;
+    font-size: 0.75rem; font-weight: 500; flex-shrink: 0;
+  }
+  .marquee-pill-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .marquee-pill-cat {
+    font-size: 0.625rem; text-transform: uppercase;
+    letter-spacing: 0.12em; color: var(--muted);
+  }
+
+  /* ── Features ─────────────────────────────────────────────────────────────── */
+  .features-section {
+    position: relative; z-index: 10;
+    max-width: 80rem; margin: 0 auto; padding: 5rem 1.5rem;
+  }
+  .features-header {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 1.5rem;
+  }
+  .features-eyebrow {
+    font-size: 0.625rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.22em; color: var(--fg);
+    margin-bottom: 0.5rem;
+  }
+  .features-h2 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(1.875rem, 4vw, 3rem);
+    font-weight: 700; letter-spacing: -0.02em;
+  }
+  .features-lp-label {
+    display: none; font-size: 0.6875rem; text-transform: uppercase;
+    letter-spacing: 0.2em; color: var(--muted);
+  }
+  @media (min-width: 768px) { .features-lp-label { display: block; } }
+  .features-grid {
+    margin-top: 2.5rem; display: grid; gap: 1rem;
+  }
+  @media (min-width: 768px) { .features-grid { grid-template-columns: repeat(3,1fr); } }
+
+  .feat-card {
+    position: relative; overflow: hidden;
+    border-radius: 1.5rem; padding: 1.75rem; border: 1px solid;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .feat-card:hover { transform: translateY(-2px); box-shadow: 0 16px 40px -12px rgba(0,0,0,0.14); }
+  .feat-default  { background: #fff; border-color: var(--border); color: var(--fg); }
+  .feat-highlight{ background: var(--accent); border-color: rgba(0,0,0,0.08); color: var(--fg); }
+  .feat-dark     { background: var(--fg); border-color: rgba(255,255,255,0.1); color: #fff; }
+
+  .feat-icon {
+    width: 2.75rem; height: 2.75rem; border-radius: 0.75rem;
+    display: grid; place-items: center; margin-bottom: 1.5rem;
+  }
+  .feat-icon svg { width: 1.25rem; height: 1.25rem; }
+  .feat-default  .feat-icon { background: #f0f0f0; }
+  .feat-highlight .feat-icon { background: rgba(0,0,0,0.1); }
+  .feat-dark     .feat-icon { background: rgba(255,255,255,0.1); }
+
+  .feat-num {
+    font-family: monospace; font-size: 0.75rem;
+  }
+  .feat-default   .feat-num { color: var(--muted); }
+  .feat-highlight .feat-num { color: rgba(0,0,0,0.55); }
+  .feat-dark      .feat-num { color: rgba(255,255,255,0.55); }
+
+  .feat-header { display: flex; align-items: start; justify-content: space-between; }
+  .feat-title {
+    margin-top: 1.5rem;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em;
+  }
+  .feat-body { margin-top: 0.5rem; font-size: 0.875rem; line-height: 1.6; }
+  .feat-default  .feat-body { color: var(--muted); }
+  .feat-highlight .feat-body { color: rgba(0,0,0,0.7); }
+  .feat-dark     .feat-body { color: rgba(255,255,255,0.7); }
+
+  /* ── CTA section ──────────────────────────────────────────────────────────── */
+  .cta-section {
+    position: relative; z-index: 10;
+    max-width: 80rem; margin: 0 auto; padding: 0 1.5rem 6rem;
+  }
+  .cta-card {
+    overflow: hidden; border-radius: 1.5rem;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: var(--fg); color: #fff;
+    padding: 2.5rem; display: grid; gap: 2rem; align-items: center;
+  }
+  @media (min-width: 768px) {
+    .cta-card { padding: 3.5rem; grid-template-columns: 1fr auto; }
+  }
+  .cta-eyebrow {
+    font-size: 0.625rem; text-transform: uppercase;
+    letter-spacing: 0.22em; color: rgba(255,255,255,0.55);
+    margin-bottom: 0.75rem;
+  }
+  .cta-h3 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(1.875rem, 4vw, 3rem);
+    font-weight: 700; letter-spacing: -0.02em;
+  }
+  .cta-h3 .hl { color: var(--accent); }
+  .cta-sub { margin-top: 0.75rem; max-width: 32rem; color: rgba(255,255,255,0.65); font-size: 0.9375rem; }
+  .cta-buttons { display: flex; flex-direction: column; gap: 0.5rem; }
+  .cta-btn-accent {
+    display: inline-flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    background: var(--accent); color: var(--fg);
+    border-radius: 999px; padding: 0.875rem 1.5rem;
+    font-size: 0.875rem; font-weight: 600; text-decoration: none;
+    transition: opacity 0.15s; white-space: nowrap;
+  }
+  .cta-btn-accent:hover { opacity: 0.88; }
+  .cta-btn-outline {
+    display: inline-flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+    border: 1px solid rgba(255,255,255,0.2); color: #fff;
+    border-radius: 999px; padding: 0.875rem 1.5rem;
+    font-size: 0.875rem; font-weight: 600; text-decoration: none;
+    transition: background 0.15s; white-space: nowrap;
+  }
+  .cta-btn-outline:hover { background: rgba(255,255,255,0.06); }
+  .cta-footer {
+    margin-top: 1.5rem; text-align: center;
+    font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.2em; color: var(--muted);
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div style="position:relative;min-height:100vh;overflow:hidden;background:var(--bg);color:var(--fg);">
+  <!-- Ambient washes -->
+  <div style="pointer-events:none;position:absolute;top:-160px;left:-160px;width:520px;height:520px;border-radius:50%;background:rgba(212,245,60,0.32);filter:blur(140px);z-index:0;"></div>
+  <div style="pointer-events:none;position:absolute;bottom:-220px;right:-160px;width:560px;height:560px;border-radius:50%;background:rgba(212,245,60,0.22);filter:blur(160px);z-index:0;"></div>
+  <div class="grid-bg" style="opacity:0.4;"></div>
+
+  <!-- ── Topbar ── -->
+  <header class="lp-header">
+    <div class="lp-header-inner">
+      <a href="/lp" class="logo-mark">
+        <div class="logo-box">Mx</div>
+        <div style="line-height:1.2;">
+          <div style="font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:700;letter-spacing:-0.01em;">Merantix Capital</div>
+          <div style="font-size:0.625rem;text-transform:uppercase;letter-spacing:0.22em;color:var(--muted);">LP Portal</div>
+        </div>
+      </a>
+      <div style="display:flex;align-items:center;gap:0.5rem;">
+        <a href="/lp/login" style="display:none;border:1px solid rgba(17,17,17,0.15);border-radius:999px;padding:0.375rem 1rem;font-size:0.75rem;font-weight:600;text-decoration:none;color:var(--fg);transition:border-color 0.15s;" onmouseover="this.style.borderColor='rgba(17,17,17,0.4)'" onmouseout="this.style.borderColor='rgba(17,17,17,0.15)'" id="signinBtn">Sign in</a>
+        <a href="/lp/register" style="border-radius:999px;background:var(--fg);color:#fff;padding:0.375rem 1rem;font-size:0.75rem;font-weight:600;text-decoration:none;transition:opacity 0.15s;" onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">Register</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Hero ── -->
+  <section class="hero">
+    <div class="hero-grid">
+      <!-- Left -->
+      <div>
+        <span class="hero-badge">
+          <span class="hero-badge-dot"></span>
+          For Limited Partners · Private beta
+        </span>
+
+        <h1 class="hero-h1">
+          Your private<br />
+          window into<br />
+          the <span class="highlight-marker">Merantix</span><br />
+          portfolio<span class="accent-dot">.</span>
+        </h1>
+
+        <p class="hero-sub">
+          Converse with an AI analyst about any Merantix company, ask broader market
+          questions, and email yourself the key insights — all in one quiet, private space.
+        </p>
+
+        <div class="hero-ctas">
+          <a href="/lp/register" class="cta-primary">
+            Create your account
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </a>
+          <a href="/lp/login" class="cta-secondary">
+            Sign in
+          </a>
+        </div>
+
+        <div class="trust-row">
+          <span class="trust-item">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--fg)" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            Confidential
+          </span>
+          <span class="trust-dot"></span>
+          <span>Invite only</span>
+          <span class="trust-dot"></span>
+          <span>2016 → today</span>
+        </div>
+      </div>
+
+      <!-- Right: Chat card -->
+      <div style="position:relative;">
+        <div class="chat-card">
+          <div class="chat-card-header">
+            <span>Today · Live</span>
+            <span class="live-dot">
+              <span class="live-dot-circle"></span>
+              AI Analyst
+            </span>
+          </div>
+
+          <div class="chat-bubbles">
+            <div class="cb user">
+              <div class="cb-inner">How is Vara doing in the German screening market?</div>
+            </div>
+            <div class="cb ai">
+              <div class="cb-inner"><strong>Vara</strong> is now deployed across the majority of German mammography screening centers. Read rate up ~22% YoY.</div>
+            </div>
+            <div class="cb user">
+              <div class="cb-inner">Which sectors is Merantix leaning into right now?</div>
+            </div>
+            <div class="cb ai">
+              <div class="cb-inner">
+                <div class="cb-loading">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-card-footer">
+            <span class="chat-card-footer-end">End conversation</span>
+            <span class="email-pill">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+              Email summary
+            </span>
+          </div>
+          <div class="chat-card-glow"></div>
+        </div>
+
+        <!-- Portfolio count badge -->
+        <div class="count-badge">
+          <div class="count-badge-label">Portfolio companies</div>
+          <div class="count-badge-num">{{ portfolio_count }}<span style="color:var(--accent);">.</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Marquee ── -->
+  <section class="marquee-section">
+    {% if companies %}
+    {% set row_a = companies %}
+    {% set row_b = companies | reverse | list %}
+    <div class="marquee-row">
+      <div class="marquee-track fwd">
+        {% for c in row_a %}{% for _ in range(2) %}
+        <span class="marquee-pill">
+          <span class="marquee-pill-dot" style="background:hsl({{ loop.index * 47 % 360 }},55%,55%);"></span>
+          {{ c.name }}
+          <span class="marquee-pill-cat">· {{ c.sector or 'Deep Tech' }}</span>
+        </span>
+        {% endfor %}{% endfor %}
+      </div>
+    </div>
+    <div class="marquee-row" style="margin-top:0.75rem;">
+      <div class="marquee-track rev">
+        {% for c in row_b %}{% for _ in range(2) %}
+        <span class="marquee-pill">
+          <span class="marquee-pill-dot" style="background:hsl({{ loop.index * 73 % 360 }},50%,50%);"></span>
+          {{ c.name }}
+          <span class="marquee-pill-cat">· {{ c.sector or 'Deep Tech' }}</span>
+        </span>
+        {% endfor %}{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- ── Features ── -->
+  <section class="features-section">
+    <div class="features-header">
+      <div>
+        <div class="features-eyebrow">Inside the portal</div>
+        <h2 class="features-h2">Three things, done well.</h2>
+      </div>
+      <div class="features-lp-label">For LPs only</div>
+    </div>
+
+    <div class="features-grid">
+      <!-- 01 -->
+      <div class="feat-card feat-default">
+        <div class="feat-header">
+          <div class="feat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </div>
+          <span class="feat-num">01</span>
+        </div>
+        <h3 class="feat-title">Ask anything</h3>
+        <p class="feat-body">Converse with an AI analyst about any portfolio company, a sector trend, or a market question. No dashboards to wrangle.</p>
+      </div>
+
+      <!-- 02 -->
+      <div class="feat-card feat-highlight">
+        <div class="feat-header">
+          <div class="feat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          </div>
+          <span class="feat-num">02</span>
+        </div>
+        <h3 class="feat-title">Browse the portfolio</h3>
+        <p class="feat-body">A clean, sector-first view of every Merantix Capital company. Click in for the team, partners and what they're shipping.</p>
+      </div>
+
+      <!-- 03 -->
+      <div class="feat-card feat-dark">
+        <div class="feat-header">
+          <div class="feat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+          </div>
+          <span class="feat-num">03</span>
+        </div>
+        <h3 class="feat-title">Email the key insights</h3>
+        <p class="feat-body">End any conversation with a one-tap summary delivered straight to your inbox. Quietly powerful.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── CTA ── -->
+  <section class="cta-section">
+    <div class="cta-card">
+      <div>
+        <div class="cta-eyebrow">Limited Partner access</div>
+        <h3 class="cta-h3">Step inside the <span class="hl">portfolio</span>.</h3>
+        <p class="cta-sub">Sign in with the email tied to your fund commitment, or register a new account in under a minute.</p>
+      </div>
+      <div class="cta-buttons">
+        <a href="/lp/register" class="cta-btn-accent">
+          Register
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17L17 7M17 7H7M17 7v10"/></svg>
+        </a>
+        <a href="/lp/login" class="cta-btn-outline">
+          Sign in
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+    </div>
+    <p class="cta-footer">Private · Confidential · Limited Partners only</p>
+  </section>
+</div>
+
+<script>
+  // Show Sign in button on larger screens
+  if (window.innerWidth >= 768) {
+    document.getElementById('signinBtn').style.display = 'inline-flex';
+  }
+</script>
+{% endblock %}

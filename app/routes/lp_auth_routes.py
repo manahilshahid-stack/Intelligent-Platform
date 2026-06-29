@@ -107,6 +107,42 @@ def _clear_lp_session_cookie(response) -> None:
 # Register
 # ─────────────────────────────────────────────────────────────────────────────
 
+@router.get("", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
+def lp_landing(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[LPUser | None, Depends(_get_lp_current_user)],
+):
+    """LP landing page. Redirects to dashboard if already logged in."""
+    if current_user and current_user.onboarding_completed:
+        return RedirectResponse("/lp/dashboard", status_code=303)
+
+    from ..models import CrmVenture
+    from sqlalchemy import select as _sel
+    from sqlalchemy import func as _func
+
+    portfolio = db.scalars(
+        _sel(CrmVenture.name, CrmVenture.sector)
+        .where(
+            _func.lower(CrmVenture.stage) == "portfolio",
+            CrmVenture.name.is_not(None),
+        )
+    ).all()
+    portfolio_count = len(portfolio)
+
+    # Build company list for marquee — use portfolio + any named active companies
+    all_ventures = db.execute(
+        _sel(CrmVenture.name, CrmVenture.sector).where(CrmVenture.name.is_not(None)).limit(60)
+    ).all()
+    companies = [{"name": r[0], "sector": r[1] or "Deep Tech"} for r in all_ventures if r[0]]
+
+    return _render(request, "lp/landing.html", {
+        "portfolio_count": portfolio_count,
+        "companies": companies[:30],
+    })
+
+
 @router.get("/register", response_class=HTMLResponse)
 def lp_register_page(
     request: Request,
