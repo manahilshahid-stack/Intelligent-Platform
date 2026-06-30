@@ -52,7 +52,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Portfolio Intelligence Platform", lifespan=lifespan)
 
-# CORS — allow the React LP frontend to call the API
+# CORS — allow the React LP frontend to call the API.
+# In production set CORS_ORIGINS on Railway to include your Cloudflare Workers URL,
+# e.g. "https://portfolio-insight-hub.YOUR_SUBDOMAIN.workers.dev,http://localhost:5173"
 _cors_origins = os.environ.get(
     "CORS_ORIGINS",
     "http://localhost:3000,http://localhost:5173,https://localhost:3000"
