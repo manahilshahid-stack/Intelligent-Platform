@@ -1,0 +1,317 @@
+{% extends "lp/app_base.html" %}
+{% block title %}{{ company.name or 'Company' }} — Merantix Capital LP Portal{% endblock %}
+
+{% block app_content %}
+{% set dot_colors = [
+  'oklch(0.92 0.25 120)',
+  'oklch(0.72 0.21 55)',
+  'oklch(0.18 0.01 60)',
+  'oklch(0.65 0.12 85)'
+] %}
+{% set ci = company.id % 4 %}
+{% set banner_color = dot_colors[ci] %}
+{% set avatar_text_color = 'oklch(0.16 0 0)' if ci != 2 else '#fff' %}
+
+<div style="max-width:80rem;margin:0 auto;padding:1.5rem 1.5rem 3rem;">
+
+  <!-- Top bar -->
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1.75rem;flex-wrap:wrap;">
+    <a href="/lp/portfolio" style="display:inline-flex;align-items:center;gap:0.375rem;font-size:0.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:0.16em;color:oklch(0.55 0 0);text-decoration:none;"
+      onmouseover="this.style.color='oklch(0.16 0 0)'" onmouseout="this.style.color='oklch(0.55 0 0)'">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      Back to portfolio
+    </a>
+    <a href="/lp/chat" style="display:inline-flex;align-items:center;gap:0.5rem;background:oklch(0.16 0 0);color:#fff;font-family:'Space Grotesk',sans-serif;font-size:0.8125rem;font-weight:600;padding:0.5rem 1.125rem;border-radius:999px;text-decoration:none;transition:opacity 0.15s;"
+      onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+      Open full AI Analyst
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+    </a>
+  </div>
+
+  <!-- Hero card -->
+  <div style="background:oklch(0.99 0 0);border:1px solid oklch(0.91 0 0);border-radius:1.25rem;overflow:hidden;margin-bottom:1.5rem;">
+    <!-- Banner -->
+    <div style="height:7rem;background:{{ banner_color }};position:relative;"></div>
+    <!-- Avatar + info -->
+    <div style="padding:0 1.5rem 1.5rem;">
+      <div style="margin-top:-2.5rem;margin-bottom:0.875rem;">
+        <div style="width:4.5rem;height:4.5rem;border-radius:0.875rem;border:3px solid oklch(0.99 0 0);background:{{ banner_color }};display:grid;place-items:center;font-family:'Space Grotesk',sans-serif;font-size:1.625rem;font-weight:800;color:{{ avatar_text_color }};">
+          {{ (company.name or '?')[0] | upper }}
+        </div>
+      </div>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+        <div>
+          <div style="display:flex;align-items:center;gap:0.625rem;flex-wrap:wrap;margin-bottom:0.375rem;">
+            <h1 style="font-family:'Space Grotesk',sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-0.02em;color:oklch(0.16 0 0);margin:0;">{{ company.name or 'Unnamed' }}</h1>
+            <div style="display:inline-flex;align-items:center;gap:0.25rem;background:oklch(0.96 0.27 116 / 0.25);border:1px solid oklch(0.88 0.2 116);border-radius:999px;padding:0.2rem 0.6rem;">
+              <span style="width:5px;height:5px;border-radius:999px;background:oklch(0.55 0.2 116);display:inline-block;"></span>
+              <span style="font-size:0.6875rem;font-weight:600;color:oklch(0.35 0.1 116);">Active</span>
+            </div>
+          </div>
+          {% if company.description %}
+          <p style="font-size:0.875rem;color:oklch(0.5 0 0);margin:0;max-width:52rem;line-height:1.55;">{{ company.description[:200] }}{% if company.description|length > 200 %}…{% endif %}</p>
+          {% endif %}
+        </div>
+        {% if company.website %}
+        <a href="{{ company.website }}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:0.375rem;font-size:0.8125rem;font-weight:600;color:oklch(0.35 0 0);border:1px solid oklch(0.88 0 0);border-radius:999px;padding:0.5rem 1rem;text-decoration:none;background:oklch(1 0 0);white-space:nowrap;transition:border-color 0.15s;"
+          onmouseover="this.style.borderColor='oklch(0.65 0 0)'" onmouseout="this.style.borderColor='oklch(0.88 0 0)'">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          Website
+        </a>
+        {% endif %}
+      </div>
+
+      <!-- Detail row -->
+      <div style="display:flex;gap:1.5rem;margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid oklch(0.93 0 0);flex-wrap:wrap;">
+        {% if company.sector %}
+        <div>
+          <div style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.14em;color:oklch(0.6 0 0);font-weight:600;margin-bottom:0.25rem;">Sector</div>
+          <a href="/lp/portfolio/{{ company.sector | lower | replace(' ', '-') | replace('/', '-') }}" style="font-size:0.875rem;font-weight:600;color:oklch(0.16 0 0);text-decoration:none;"
+            onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">{{ company.sector }}</a>
+        </div>
+        {% endif %}
+        {% if company.stage %}
+        <div>
+          <div style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.14em;color:oklch(0.6 0 0);font-weight:600;margin-bottom:0.25rem;">Stage</div>
+          <div style="font-size:0.875rem;font-weight:600;color:oklch(0.16 0 0);">{{ company.stage }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Two-column layout -->
+  <div style="display:grid;grid-template-columns:1fr;gap:1.5rem;" id="mainGrid">
+
+    <!-- LEFT: About + Notes -->
+    <div style="display:flex;flex-direction:column;gap:1.25rem;" id="leftCol">
+
+      <!-- About card -->
+      {% if company.description %}
+      <div style="background:oklch(0.99 0 0);border:1px solid oklch(0.91 0 0);border-radius:1.125rem;padding:1.5rem;">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.4 0 0)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <h2 style="font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:700;color:oklch(0.16 0 0);margin:0;letter-spacing:-0.01em;">About</h2>
+        </div>
+        <p style="font-size:0.9rem;color:oklch(0.35 0 0);line-height:1.7;margin:0;">{{ company.description }}</p>
+      </div>
+      {% endif %}
+
+      <!-- Notes card -->
+      {% if notes %}
+      <div style="background:oklch(0.99 0 0);border:1px solid oklch(0.91 0 0);border-radius:1.125rem;padding:1.5rem;">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1.25rem;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.4 0 0)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <h2 style="font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:700;color:oklch(0.16 0 0);margin:0;letter-spacing:-0.01em;">Notes</h2>
+          <span style="font-size:0.75rem;color:oklch(0.6 0 0);">{{ notes | length }}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:0;">
+          {% for note in notes %}
+          <div style="display:flex;gap:1rem;{% if not loop.last %}padding-bottom:1.25rem;margin-bottom:1.25rem;border-bottom:1px solid oklch(0.93 0 0);{% endif %}">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:0;">
+              <div style="width:8px;height:8px;border-radius:999px;background:oklch(0.82 0 0);flex-shrink:0;margin-top:0.3rem;"></div>
+              {% if not loop.last %}<div style="width:1px;flex:1;background:oklch(0.92 0 0);margin:0.25rem 0;"></div>{% endif %}
+            </div>
+            <div style="flex:1;min-width:0;">
+              {% if note.title %}
+              <div style="font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:700;color:oklch(0.16 0 0);margin-bottom:0.25rem;">{{ note.title }}</div>
+              {% endif %}
+              {% if note.created_at_attio %}
+              <div style="font-size:0.75rem;color:oklch(0.6 0 0);margin-bottom:0.375rem;">{{ note.created_at_attio.strftime('%b %d, %Y') }}</div>
+              {% endif %}
+              {% if note.content_text %}
+              <p style="font-size:0.8125rem;color:oklch(0.45 0 0);line-height:1.6;margin:0;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;">{{ note.content_text }}</p>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+
+    <!-- RIGHT: Chat panel -->
+    <div id="rightCol" style="position:relative;">
+      <div id="chatPanel" style="background:oklch(0.99 0 0);border:1px solid oklch(0.91 0 0);border-radius:1.125rem;overflow:hidden;display:flex;flex-direction:column;height:560px;">
+
+        <!-- Chat header -->
+        <div style="padding:1rem 1.25rem;border-bottom:1px solid oklch(0.93 0 0);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+          <div style="display:flex;align-items:center;gap:0.5rem;">
+            <div style="width:1.625rem;height:1.625rem;background:oklch(0.16 0 0);border-radius:0.4rem;display:grid;place-items:center;color:#fff;font-size:0.7rem;">✦</div>
+            <span style="font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:700;color:oklch(0.16 0 0);">Ask about {{ company.name or 'this company' }}</span>
+          </div>
+          <button onclick="emailSummary()" style="display:inline-flex;align-items:center;gap:0.375rem;font-size:0.75rem;font-weight:600;color:oklch(0.4 0 0);background:oklch(0.96 0 0);border:1px solid oklch(0.89 0 0);border-radius:999px;padding:0.35rem 0.75rem;cursor:pointer;transition:background 0.15s;"
+            onmouseover="this.style.background='oklch(0.92 0 0)'" onmouseout="this.style.background='oklch(0.96 0 0)'">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            Email summary
+          </button>
+        </div>
+
+        <!-- Messages -->
+        <div id="chatMessages" style="flex:1;overflow-y:auto;padding:1rem 1.25rem;display:flex;flex-direction:column;gap:0.75rem;">
+          {% if enriched_messages %}
+            {% for item in enriched_messages %}
+            <div style="display:flex;gap:0.625rem;{% if item.msg.role == 'user' %}flex-direction:row-reverse;{% endif %}">
+              <div style="width:1.75rem;height:1.75rem;border-radius:0.4rem;background:{% if item.msg.role == 'user' %}oklch(0.91 0 0){% else %}oklch(0.16 0 0){% endif %};display:grid;place-items:center;font-family:'Space Grotesk',sans-serif;font-size:0.6875rem;font-weight:700;color:{% if item.msg.role == 'user' %}oklch(0.16 0 0){% else %}#fff{% endif %};flex-shrink:0;">
+                {% if item.msg.role == 'user' %}{{ user.name[0] | upper }}{% else %}✦{% endif %}
+              </div>
+              <div style="max-width:80%;font-size:0.8125rem;line-height:1.6;padding:0.625rem 0.875rem;border-radius:0.75rem;{% if item.msg.role == 'user' %}background:oklch(0.96 0 0);color:oklch(0.16 0 0);{% else %}background:oklch(0.16 0 0);color:#fff;{% endif %}"
+                {% if item.msg.role == 'assistant' %}data-md="{{ item.msg.content | e }}"{% endif %}>
+                {% if item.msg.role == 'user' %}{{ item.msg.content }}{% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+          <!-- Empty state -->
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:0.5rem;padding:1rem 0;">
+            <div style="font-size:1.25rem;">✦</div>
+            <p style="font-size:0.8125rem;color:oklch(0.55 0 0);margin:0;">Ask anything about {{ company.name or 'this company' }}</p>
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- Suggested prompts (shown when no messages) -->
+        {% if not enriched_messages %}
+        <div id="suggestionsBar" style="padding:0 1.25rem 0.75rem;display:flex;flex-wrap:wrap;gap:0.375rem;">
+          <button class="sugg-chip" onclick="fillInput(this)">What does this company do?</button>
+          <button class="sugg-chip" onclick="fillInput(this)">Who founded it?</button>
+          <button class="sugg-chip" onclick="fillInput(this)">How is it differentiated?</button>
+        </div>
+        {% endif %}
+
+        <!-- Input form -->
+        <form method="post" action="/lp/chat" id="compChatForm" onsubmit="handleSend(event)" style="padding:0.75rem 1rem;border-top:1px solid oklch(0.93 0 0);display:flex;gap:0.5rem;flex-shrink:0;background:oklch(1 0 0);">
+          <input type="hidden" name="company_context" value="{{ company.name or '' }}">
+          <input
+            type="text"
+            name="message"
+            id="compChatInput"
+            placeholder="Ask about {{ company.name or 'this company' }}…"
+            autocomplete="off"
+            required
+            style="flex:1;padding:0.5625rem 0.875rem;border:1px solid oklch(0.88 0 0);border-radius:999px;font-size:0.8125rem;color:oklch(0.16 0 0);background:oklch(0.99 0 0);outline:none;transition:border-color 0.15s;"
+            onfocus="this.style.borderColor='oklch(0.65 0 0)'" onblur="this.style.borderColor='oklch(0.88 0 0)'"
+          />
+          <button type="submit" id="compSendBtn" style="width:2.25rem;height:2.25rem;background:oklch(0.16 0 0);border:none;border-radius:999px;cursor:pointer;display:grid;place-items:center;flex-shrink:0;transition:opacity 0.15s;"
+            onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+          </button>
+        </form>
+      </div>
+    </div>
+
+  </div><!-- /mainGrid -->
+</div>
+
+<style>
+.sugg-chip {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: oklch(0.4 0 0);
+  background: oklch(0.96 0 0);
+  border: 1px solid oklch(0.9 0 0);
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.sugg-chip:hover {
+  background: oklch(0.92 0 0);
+  border-color: oklch(0.82 0 0);
+}
+@media (min-width: 900px) {
+  #mainGrid {
+    grid-template-columns: 1fr 420px !important;
+    align-items: start;
+  }
+  #chatPanel {
+    position: sticky;
+    top: 5rem;
+  }
+}
+</style>
+
+<script>
+function md(text) {
+  let h = text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/^### (.+)$/gm,'<h3 style="font-size:0.875rem;font-weight:700;margin:0.5rem 0 0.25rem">$1</h3>')
+    .replace(/^## (.+)$/gm,'<h2 style="font-size:0.9375rem;font-weight:700;margin:0.5rem 0 0.25rem">$1</h2>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>');
+  const lines = h.split('\n');
+  let out = [], inList = false, listHtml = '';
+  for (const line of lines) {
+    const m = line.match(/^\s*[-*] (.+)$/);
+    if (m) {
+      if (!inList) { inList = true; listHtml = '<ul style="margin:0.25rem 0;padding-left:1.25rem;">'; }
+      listHtml += '<li style="margin-bottom:0.2rem;">' + m[1] + '</li>';
+    } else {
+      if (inList) { listHtml += '</ul>'; out.push(listHtml); inList = false; listHtml = ''; }
+      if (line.trim()) out.push(line);
+    }
+  }
+  if (inList) { listHtml += '</ul>'; out.push(listHtml); }
+  h = out.join('\n');
+  const blocks = h.split(/\n\n+/);
+  h = blocks.map(b => {
+    b = b.trim();
+    if (!b) return '';
+    if (/^<(h[1-6]|ul|ol|pre|blockquote|hr)/.test(b)) return b;
+    b = b.replace(/\n/g,'<br>');
+    return b.startsWith('<') ? b : '<p style="margin:0.25rem 0">' + b + '</p>';
+  }).filter(Boolean).join('');
+  return h;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('[data-md]').forEach(el => {
+    const raw = el.getAttribute('data-md');
+    const txt = raw.replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&#39;/g,"'").replace(/&quot;/g,'"');
+    el.innerHTML = md(txt);
+  });
+  scrollBottom();
+});
+
+function scrollBottom() {
+  const el = document.getElementById('chatMessages');
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+function fillInput(btn) {
+  document.getElementById('compChatInput').value = btn.textContent;
+  document.getElementById('compChatInput').focus();
+}
+
+function handleSend(e) {
+  const bar = document.getElementById('suggestionsBar');
+  if (bar) bar.style.display = 'none';
+  const msgs = document.getElementById('chatMessages');
+  const input = document.getElementById('compChatInput');
+  const text = input.value.trim();
+  if (!text) { e.preventDefault(); return; }
+
+  // Clear empty state
+  const emptyDiv = msgs.querySelector('div[style*="justify-content: center"]');
+  if (emptyDiv) emptyDiv.remove();
+
+  const userDiv = document.createElement('div');
+  userDiv.style.cssText = 'display:flex;gap:0.625rem;flex-direction:row-reverse;';
+  userDiv.innerHTML = '<div style="width:1.75rem;height:1.75rem;border-radius:0.4rem;background:oklch(0.91 0 0);display:grid;place-items:center;font-family:\'Space Grotesk\',sans-serif;font-size:0.6875rem;font-weight:700;color:oklch(0.16 0 0);flex-shrink:0;">{{ user.name[0] | upper }}</div><div style="max-width:80%;font-size:0.8125rem;line-height:1.6;padding:0.625rem 0.875rem;border-radius:0.75rem;background:oklch(0.96 0 0);color:oklch(0.16 0 0);">' + text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</div>';
+  msgs.appendChild(userDiv);
+
+  const thinkDiv = document.createElement('div');
+  thinkDiv.style.cssText = 'display:flex;gap:0.625rem;';
+  thinkDiv.innerHTML = '<div style="width:1.75rem;height:1.75rem;border-radius:0.4rem;background:oklch(0.16 0 0);display:grid;place-items:center;color:#fff;font-size:0.7rem;flex-shrink:0;">✦</div><div style="padding:0.625rem 0.875rem;border-radius:0.75rem;background:oklch(0.16 0 0);color:#fff;font-size:0.8125rem;"><span>…</span></div>';
+  msgs.appendChild(thinkDiv);
+  scrollBottom();
+  document.getElementById('compSendBtn').disabled = true;
+}
+
+function emailSummary() {
+  alert('Email summary will be sent to {{ user.email }} — this feature is coming in the next beta release.');
+}
+</script>
+{% endblock %}

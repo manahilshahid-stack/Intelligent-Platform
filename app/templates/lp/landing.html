@@ -470,9 +470,9 @@
       <div class="mq-track fwd">
         {# Render twice for seamless loop #}
         {% for pass in range(2) %}
-          {% for i, c in companies | enumerate %}
+          {% for c in companies %}
           <span class="mq-pill">
-            <span class="mq-dot" style="background:{{ colors[i % 4] }};"></span>
+            <span class="mq-dot" style="background:{{ colors[loop.index0 % 4] }};"></span>
             {{ c.name }}
             <span class="mq-cat">· {{ c.sector or 'Deep Tech' }}</span>
           </span>
@@ -483,9 +483,9 @@
     <div class="mq-row">
       <div class="mq-track rev">
         {% for pass in range(2) %}
-          {% for i, c in (companies | reverse | list) | enumerate %}
+          {% for c in companies | reverse %}
           <span class="mq-pill">
-            <span class="mq-dot" style="background:{{ colors[i % 4] }};"></span>
+            <span class="mq-dot" style="background:{{ colors[loop.index0 % 4] }};"></span>
             {{ c.name }}
             <span class="mq-cat">· {{ c.sector or 'Deep Tech' }}</span>
           </span>

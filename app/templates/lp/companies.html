@@ -1,0 +1,116 @@
+{% extends "lp/app_base.html" %}
+{% block title %}Companies — Merantix Capital LP Portal{% endblock %}
+
+{% block app_content %}
+{% set dot_colors = [
+  'oklch(0.92 0.25 120)',
+  'oklch(0.72 0.21 55)',
+  'oklch(0.18 0.01 60)',
+  'oklch(0.65 0.12 85)'
+] %}
+
+<main style="max-width:72rem;margin:0 auto;padding:3rem 1.5rem;">
+
+  <!-- Eyebrow + heading -->
+  <div style="margin-bottom:2.5rem;">
+    <p style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:0.22em;color:oklch(0.55 0 0);margin:0 0 0.625rem;">Directory</p>
+    <h1 style="font-family:'Space Grotesk',sans-serif;font-size:clamp(2rem,4vw,3rem);font-weight:800;letter-spacing:-0.03em;color:oklch(0.16 0 0);line-height:1.1;margin:0 0 0.875rem;">
+      Browse the
+      <span style="display:inline;position:relative;white-space:nowrap;">
+        <span style="position:relative;z-index:1;">portfolio.</span>
+        <span aria-hidden="true" style="position:absolute;left:-2px;right:-2px;bottom:0.05em;height:0.35em;background:linear-gradient(90deg,oklch(0.96 0.27 116),oklch(0.9 0.25 120));border-radius:2px;z-index:0;"></span>
+      </span>
+    </h1>
+    <p style="font-size:0.9375rem;color:oklch(0.55 0 0);margin:0;" id="resultsCount">
+      {{ companies | length }} {% if companies | length == 1 %}company{% else %}companies{% endif %} across the Merantix Capital portfolio.
+    </p>
+  </div>
+
+  <!-- Search -->
+  <div style="margin-bottom:2rem;position:relative;max-width:28rem;">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.6 0 0)" stroke-width="2" style="position:absolute;left:0.875rem;top:50%;transform:translateY(-50%);pointer-events:none;">
+      <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+    </svg>
+    <input
+      type="text"
+      id="searchInput"
+      placeholder="Search by name or sector…"
+      autocomplete="off"
+      oninput="filterCompanies()"
+      style="width:100%;padding:0.625rem 1rem 0.625rem 2.5rem;border:1px solid oklch(0.88 0 0);border-radius:999px;font-size:0.875rem;color:oklch(0.16 0 0);background:oklch(0.99 0 0);outline:none;box-sizing:border-box;transition:border-color 0.15s;"
+      onfocus="this.style.borderColor='oklch(0.65 0 0)'" onblur="this.style.borderColor='oklch(0.88 0 0)'"
+    />
+  </div>
+
+  <!-- Grid -->
+  <div id="companyGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;">
+    {% for company in companies %}
+    {% set ci = loop.index0 % 4 %}
+    <a href="/lp/company/{{ company.id }}"
+      class="company-card"
+      data-name="{{ (company.name or '') | lower }}"
+      data-sector="{{ (company.sector or '') | lower }}"
+      style="text-decoration:none;display:block;">
+      <div style="background:oklch(0.99 0 0);border:1px solid oklch(0.91 0 0);border-radius:1rem;padding:1.25rem;display:flex;flex-direction:column;gap:0.875rem;transition:border-color 0.15s,box-shadow 0.15s;cursor:pointer;height:100%;"
+        onmouseover="this.style.borderColor='oklch(0.75 0 0)';this.style.boxShadow='0 4px 16px oklch(0 0 0 / 0.06)';this.querySelector('.arr-icon').style.opacity='1'"
+        onmouseout="this.style.borderColor='oklch(0.91 0 0)';this.style.boxShadow='none';this.querySelector('.arr-icon').style.opacity='0'">
+
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.5rem;">
+          <div style="display:flex;align-items:center;gap:0.75rem;">
+            <div style="width:2.5rem;height:2.5rem;border-radius:0.625rem;background:{{ dot_colors[ci] }};display:grid;place-items:center;font-family:'Space Grotesk',sans-serif;font-size:1rem;font-weight:800;color:{% if ci == 2 %}#fff{% else %}oklch(0.16 0 0){% endif %};flex-shrink:0;">
+              {{ (company.name or '?')[0] | upper }}
+            </div>
+            <div>
+              <div style="font-family:'Space Grotesk',sans-serif;font-size:0.9375rem;font-weight:700;color:oklch(0.16 0 0);letter-spacing:-0.01em;">{{ company.name or 'Unnamed' }}</div>
+              {% if company.sector %}
+              <div style="font-size:0.75rem;color:oklch(0.6 0 0);margin-top:0.125rem;">{{ company.sector }}</div>
+              {% endif %}
+            </div>
+          </div>
+          <svg class="arr-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.55 0 0)" stroke-width="2" style="flex-shrink:0;margin-top:2px;opacity:0;transition:opacity 0.15s;"><path d="M7 17L17 7M17 7H7M17 7v10"/></svg>
+        </div>
+
+        {% if company.description %}
+        <p style="font-size:0.8125rem;color:oklch(0.45 0 0);line-height:1.55;margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">{{ company.description }}</p>
+        {% endif %}
+
+        <div style="display:inline-flex;align-items:center;gap:0.25rem;align-self:flex-start;background:oklch(0.96 0.27 116 / 0.25);border:1px solid oklch(0.88 0.2 116);border-radius:999px;padding:0.15rem 0.55rem;">
+          <span style="width:5px;height:5px;border-radius:999px;background:oklch(0.55 0.2 116);display:inline-block;"></span>
+          <span style="font-size:0.6875rem;font-weight:600;color:oklch(0.35 0.1 116);">Active</span>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- No results state (hidden by default) -->
+  <div id="noResults" style="display:none;text-align:center;padding:4rem 1.5rem;">
+    <p style="font-size:0.9375rem;color:oklch(0.55 0 0);">No companies match your search.</p>
+  </div>
+
+</main>
+
+<script>
+function filterCompanies() {
+  const q = document.getElementById('searchInput').value.toLowerCase().trim();
+  const cards = document.querySelectorAll('.company-card');
+  let visible = 0;
+  cards.forEach(card => {
+    const name = card.dataset.name || '';
+    const sector = card.dataset.sector || '';
+    const match = !q || name.includes(q) || sector.includes(q);
+    card.style.display = match ? 'block' : 'none';
+    if (match) visible++;
+  });
+  const countEl = document.getElementById('resultsCount');
+  if (countEl) {
+    if (q) {
+      countEl.textContent = visible + (visible === 1 ? ' company' : ' companies') + ' matching "' + q + '"';
+    } else {
+      countEl.textContent = cards.length + (cards.length === 1 ? ' company' : ' companies') + ' across the Merantix Capital portfolio.';
+    }
+  }
+  document.getElementById('noResults').style.display = visible === 0 ? 'block' : 'none';
+}
+</script>
+{% endblock %}

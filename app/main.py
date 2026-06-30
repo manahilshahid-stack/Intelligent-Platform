@@ -2,6 +2,7 @@ from __future__ import annotations
 from .routes.lp_auth_routes import router as lp_auth_router
 from .routes.lp_chat_routes import router as lp_chat_router
 from .routes.lp_api_routes import router as lp_api_router
+from .routes.lp_pages_routes import router as lp_pages_router
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -78,6 +79,7 @@ app.include_router(review_router)
 app.include_router(lp_auth_router)
 app.include_router(lp_chat_router)
 app.include_router(lp_api_router)
+app.include_router(lp_pages_router)
 app.include_router(webhook_router)
 
 @app.get("/healthz")

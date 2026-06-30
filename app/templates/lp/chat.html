@@ -1,4 +1,4 @@
-{% extends "lp/base.html" %}
+{% extends "lp/app_base.html" %}
 {% block title %}AI Analyst — Merantix Capital LP Portal{% endblock %}
 
 {% block head %}
@@ -8,8 +8,8 @@
 </style>
 {% endblock %}
 
-{% block body %}
-<div class="page" style="display:flex;flex-direction:column;height:100vh;">
+{% block app_content %}
+<div style="display:flex;flex-direction:column;height:calc(100vh - 4rem);">
   <!-- Topbar -->
   <header class="topbar" style="flex-shrink:0;">
     <div class="topbar-inner">
@@ -201,4 +201,5 @@ if (q) {
   }
 }
 </script>
-{% endblock %}
+{% endblock %} {# app_content #}
+{% endblock %} {# body from app_base #}

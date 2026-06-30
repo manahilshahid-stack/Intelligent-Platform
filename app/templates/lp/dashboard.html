@@ -1,25 +1,8 @@
-{% extends "lp/base.html" %}
+{% extends "lp/app_base.html" %}
 {% block title %}Home — Merantix Capital LP Portal{% endblock %}
 
-{% block body %}
-<div class="page">
-  <!-- Topbar -->
-  <header class="topbar">
-    <div class="topbar-inner">
-      <a href="/lp/dashboard" class="logo-mark">
-        <div class="logo-box">Mx</div>
-        <span>Merantix Capital</span>
-      </a>
-      <div class="flex items-center gap-2">
-        <form method="post" action="/lp/logout" style="margin:0;">
-          <button type="submit" class="btn btn-secondary btn-sm">Sign out</button>
-        </form>
-      </div>
-    </div>
-  </header>
-
-  <!-- Content -->
-  <main class="mx-auto max-w-5xl px-6" style="padding-top:2.5rem;padding-bottom:4rem;">
+{% block app_content %}
+  <main style="max-width:64rem;margin:0 auto;padding:2.5rem 1.5rem 4rem;">
 
     <!-- Greeting -->
     <header style="margin-bottom:3rem;">
@@ -130,7 +113,6 @@
       </div>
     </section>
   </main>
-</div>
 
 <script>
 function handleAvatar(input) {

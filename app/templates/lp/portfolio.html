@@ -1,0 +1,77 @@
+{% extends "lp/app_base.html" %}
+{% block title %}Portfolio — Merantix Capital LP Portal{% endblock %}
+
+{% block app_content %}
+<main style="max-width:72rem;margin:0 auto;padding:3rem 1.5rem;">
+
+  <!-- Step indicator -->
+  <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:2.5rem;font-size:0.6875rem;font-weight:600;text-transform:uppercase;letter-spacing:0.16em;">
+    <span style="color:oklch(0.16 0 0);background:oklch(0.96 0.27 116);padding:0.25rem 0.75rem;border-radius:999px;">Step 1 · Pick a sector</span>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="oklch(0.65 0 0)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+    <span style="color:oklch(0.65 0 0);">Pick a company</span>
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="oklch(0.65 0 0)" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+    <span style="color:oklch(0.65 0 0);">Chat</span>
+  </div>
+
+  <!-- Header -->
+  <div style="margin-bottom:2.5rem;max-width:42rem;">
+    <h1 style="font-family:'Space Grotesk',sans-serif;font-size:clamp(2rem,4vw,3rem);font-weight:800;letter-spacing:-0.03em;color:oklch(0.16 0 0);line-height:1.1;margin:0 0 1rem;">
+      Start with a
+      <span style="display:inline;position:relative;white-space:nowrap;">
+        <span style="position:relative;z-index:1;">sector.</span>
+        <span aria-hidden="true" style="position:absolute;left:-2px;right:-2px;bottom:0.05em;height:0.35em;background:linear-gradient(90deg,oklch(0.96 0.27 116),oklch(0.9 0.25 120));border-radius:2px;z-index:0;"></span>
+      </span>
+    </h1>
+    <p style="font-size:1rem;color:oklch(0.45 0 0);line-height:1.65;margin:0;">
+      Browse the Merantix Capital portfolio the way we think about it — by domain.
+    </p>
+  </div>
+
+  <!-- Stats row -->
+  <div style="display:flex;gap:2rem;margin-bottom:2.5rem;">
+    <div style="display:flex;flex-direction:column;gap:0.125rem;">
+      <span style="font-family:'Space Grotesk',sans-serif;font-size:1.75rem;font-weight:800;letter-spacing:-0.03em;color:oklch(0.16 0 0);">{{ total_sectors }}</span>
+      <span style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.14em;color:oklch(0.55 0 0);font-weight:500;">Sectors</span>
+    </div>
+    <div style="width:1px;background:oklch(0.91 0 0);"></div>
+    <div style="display:flex;flex-direction:column;gap:0.125rem;">
+      <span style="font-family:'Space Grotesk',sans-serif;font-size:1.75rem;font-weight:800;letter-spacing:-0.03em;color:oklch(0.16 0 0);">{{ total_companies }}</span>
+      <span style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.14em;color:oklch(0.55 0 0);font-weight:500;">Portfolio companies</span>
+    </div>
+  </div>
+
+  <!-- Sector grid -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;margin-bottom:1.5rem;">
+    {% for s in sectors %}
+    <a href="/lp/portfolio/{{ s.slug }}" style="text-decoration:none;display:block;" class="sector-card-link">
+      <div class="sector-card" style="background:oklch(0.99 0 0);border:1px solid oklch(0.91 0 0);border-radius:1rem;padding:1.5rem;display:flex;flex-direction:column;gap:0.75rem;transition:border-color 0.15s,box-shadow 0.15s;cursor:pointer;"
+        onmouseover="this.style.borderColor='oklch(0.75 0 0)';this.style.boxShadow='0 4px 16px oklch(0 0 0 / 0.06)'"
+        onmouseout="this.style.borderColor='oklch(0.91 0 0)';this.style.boxShadow='none'">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.5rem;">
+          <span style="font-family:'Space Grotesk',sans-serif;font-size:1rem;font-weight:700;color:oklch(0.16 0 0);letter-spacing:-0.01em;line-height:1.3;">{{ s.name }}</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="oklch(0.55 0 0)" stroke-width="2" style="flex-shrink:0;margin-top:2px;"><path d="M7 17L17 7M17 7H7M17 7v10"/></svg>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.375rem;">
+          <span style="width:6px;height:6px;border-radius:999px;background:oklch(0.96 0.27 116);display:inline-block;"></span>
+          <span style="font-size:0.8125rem;color:oklch(0.55 0 0);">{{ s.company_count }} portfolio {% if s.company_count == 1 %}company{% else %}companies{% endif %}</span>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- CTA card -->
+  <div style="border:1.5px dashed oklch(0.85 0 0);border-radius:1rem;padding:1.5rem 2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+    <div>
+      <p style="font-family:'Space Grotesk',sans-serif;font-size:0.9375rem;font-weight:600;color:oklch(0.16 0 0);margin:0 0 0.25rem;">Looking for something specific?</p>
+      <p style="font-size:0.8125rem;color:oklch(0.55 0 0);margin:0;">Ask the AI Analyst and get an instant answer.</p>
+    </div>
+    <a href="/lp/chat" style="display:inline-flex;align-items:center;gap:0.5rem;background:oklch(0.16 0 0);color:#fff;font-family:'Space Grotesk',sans-serif;font-size:0.8125rem;font-weight:600;padding:0.625rem 1.25rem;border-radius:999px;text-decoration:none;white-space:nowrap;transition:opacity 0.15s;"
+      onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+      Ask the AI Analyst
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+    </a>
+  </div>
+
+</main>
+{% endblock %}
