@@ -436,6 +436,53 @@ def api_logout(
     return {"ok": True}
 
 
+@router.get("/companies")
+def api_get_companies(
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return all portfolio companies for the browse/directory pages."""
+    from ..models import CrmVenture
+    from sqlalchemy import func as _func
+
+    _COLORS = [
+        "oklch(0.92 0.25 120)",
+        "oklch(0.72 0.21 55)",
+        "oklch(0.18 0.01 60)",
+        "oklch(0.65 0.12 85)",
+    ]
+
+    ventures = db.scalars(
+        select(CrmVenture)
+        .where(_func.lower(CrmVenture.stage) == "portfolio")
+        .where(CrmVenture.name.is_not(None))
+        .order_by(CrmVenture.name)
+    ).all()
+
+    companies = []
+    for i, v in enumerate(ventures):
+        website = (v.website or "").replace("https://", "").replace("http://", "").rstrip("/")
+        companies.append({
+            "id": str(v.id),
+            "name": v.name,
+            "tagline": v.description or f"{v.name} — Merantix Capital portfolio company",
+            "category": v.sector or "Deep Tech",
+            "stage": "Seed",
+            "founders": [],
+            "website": website,
+            "status": "Active",
+            "logo": (v.name or "?")[0].upper(),
+            "color": _COLORS[i % 4],
+            "hq": "",
+            "fund": "Merantix Capital",
+            "investmentYear": 2024,
+            "valuation": 0,
+            "invested": 0,
+            "growth": 0,
+        })
+    return companies
+
+
 @router.post("/resend-otp")
 def api_resend_otp(body: VerifyOtpRequest, db: Session = Depends(get_db)):
     """Resend OTP to the given email (only body.email is used)."""
