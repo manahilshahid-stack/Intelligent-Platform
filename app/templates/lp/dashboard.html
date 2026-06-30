@@ -83,10 +83,14 @@
         <div>
           <div class="pref-label">Areas of interest</div>
           {% if user.interest_areas %}
-            {% set areas = user.interest_areas | tojson | fromjson %}
-            {% for area in areas %}
-              <span class="pref-chip">{{ area.replace('_',' ').title() }}</span>
-            {% endfor %}
+            {% set areas = user.interest_areas | fromjson %}
+            {% if areas %}
+              {% for area in areas %}
+                <span class="pref-chip">{{ area.replace('_',' ').title() }}</span>
+              {% endfor %}
+            {% else %}
+              <p class="empty-hint">Add interests to personalize recommendations.</p>
+            {% endif %}
           {% else %}
             <p class="empty-hint">Add interests to personalize recommendations.</p>
           {% endif %}
@@ -94,10 +98,14 @@
         <div>
           <div class="pref-label">Looking for</div>
           {% if user.looking_for %}
-            {% set looking = user.looking_for | tojson | fromjson %}
-            {% for item in looking %}
-              <p class="text-sm">{{ item.replace('_',' ').title() }}</p>
-            {% endfor %}
+            {% set looking = user.looking_for | fromjson %}
+            {% if looking %}
+              {% for item in looking %}
+                <p class="text-sm">{{ item.replace('_',' ').title() }}</p>
+              {% endfor %}
+            {% else %}
+              <p class="empty-hint">Tell us what kind of insight you want.</p>
+            {% endif %}
           {% else %}
             <p class="empty-hint">Tell us what kind of insight you want.</p>
           {% endif %}

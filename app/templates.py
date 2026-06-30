@@ -46,12 +46,16 @@ def status_badge(value: str) -> str:
 templates.env.filters["status_badge"] = status_badge
 
 
-def fromjson(value: str) -> dict:
+def fromjson(value):
     import json
+    if not value:
+        return []
+    if isinstance(value, (list, dict)):
+        return value
     try:
         return json.loads(value)
     except Exception:
-        return {}
+        return []
 
 
 templates.env.filters["fromjson"] = fromjson
