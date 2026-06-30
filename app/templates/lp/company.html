@@ -97,37 +97,7 @@
       </div>
       {% endif %}
 
-      <!-- Notes card -->
-      {% if notes %}
-      <div style="background:oklch(0.99 0 0);border:1px solid oklch(0.91 0 0);border-radius:1.125rem;padding:1.5rem;">
-        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1.25rem;">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="oklch(0.4 0 0)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-          <h2 style="font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:700;color:oklch(0.16 0 0);margin:0;letter-spacing:-0.01em;">Notes</h2>
-          <span style="font-size:0.75rem;color:oklch(0.6 0 0);">{{ notes | length }}</span>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:0;">
-          {% for note in notes %}
-          <div style="display:flex;gap:1rem;{% if not loop.last %}padding-bottom:1.25rem;margin-bottom:1.25rem;border-bottom:1px solid oklch(0.93 0 0);{% endif %}">
-            <div style="display:flex;flex-direction:column;align-items:center;gap:0;">
-              <div style="width:8px;height:8px;border-radius:999px;background:oklch(0.82 0 0);flex-shrink:0;margin-top:0.3rem;"></div>
-              {% if not loop.last %}<div style="width:1px;flex:1;background:oklch(0.92 0 0);margin:0.25rem 0;"></div>{% endif %}
-            </div>
-            <div style="flex:1;min-width:0;">
-              {% if note.title %}
-              <div style="font-family:'Space Grotesk',sans-serif;font-size:0.875rem;font-weight:700;color:oklch(0.16 0 0);margin-bottom:0.25rem;">{{ note.title }}</div>
-              {% endif %}
-              {% if note.created_at_attio %}
-              <div style="font-size:0.75rem;color:oklch(0.6 0 0);margin-bottom:0.375rem;">{{ note.created_at_attio.strftime('%b %d, %Y') }}</div>
-              {% endif %}
-              {% if note.content_text %}
-              <p style="font-size:0.8125rem;color:oklch(0.45 0 0);line-height:1.6;margin:0;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;">{{ note.content_text }}</p>
-              {% endif %}
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
+      {# Notes are internal only — not shown to LPs #}
 
     </div>
 
