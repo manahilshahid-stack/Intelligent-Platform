@@ -5,32 +5,31 @@ All endpoints return JSON (not HTML). Auth uses Bearer tokens so the React
 app can run on a different domain from the FastAPI backend.
 
 Endpoints:
-  POST /api/lp/register      Create account, send OTP to email
-  POST /api/lp/verify-otp    Verify OTP → return bearer token
-  POST /api/lp/login         Email + password → return bearer token
-  GET  /api/lp/me            Get current user profile
-  PUT  /api/lp/me            Update profile / complete onboarding
-  POST /api/lp/chat          Send a message, get AI response
-  POST /api/lp/logout        Invalidate session
+  POST /api/lp/register                 Create account → return bearer token immediately
+  POST /api/lp/login                    Email + password → return bearer token
+  GET  /api/lp/me                       Get current user profile
+  PUT  /api/lp/me                       Update profile / complete onboarding
+  POST /api/lp/chat                     Send a message, get AI response
+  POST /api/lp/logout                   Invalidate session
+  GET  /api/lp/companies                List all portfolio companies
+  GET  /api/lp/companies/{id}           Single company detail
+  GET  /api/lp/portfolio/sectors        Portfolio grouped by sector
+  GET  /api/lp/portfolio/sectors/{slug} Companies in a sector
+  GET  /api/lp/chat/sessions            All chat sessions for current user
+  GET  /api/lp/chat/sessions/{id}       Single session with messages
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
-import os
-import random
+import re
 import secrets
-import smtplib
-import string
 from datetime import datetime, timedelta
-from email.mime.text import MIMEText
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, EmailStr
-from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..auth import hash_password, verify_password, _token_hash
@@ -40,6 +39,13 @@ from ..models import AppSetting, LPUser, LPUserSession
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/lp")
+
+_COLORS = [
+    "oklch(0.92 0.25 120)",
+    "oklch(0.72 0.21 55)",
+    "oklch(0.18 0.01 60)",
+    "oklch(0.65 0.12 85)",
+]
 
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -77,89 +83,6 @@ def _get_current_user(
     return user
 
 
-# ── OTP helpers ───────────────────────────────────────────────────────────────
-
-_OTP_TTL_MINUTES = 10
-
-
-def _otp_key(email: str) -> str:
-    return f"otp:{email.lower().strip()}"
-
-
-def _store_otp(email: str, code: str, db: Session) -> None:
-    expiry = (datetime.utcnow() + timedelta(minutes=_OTP_TTL_MINUTES)).isoformat()
-    value = f"{code}:{expiry}"
-    key = _otp_key(email)
-    row = db.scalar(select(AppSetting).where(AppSetting.key == key))
-    if row:
-        row.value = value
-    else:
-        db.add(AppSetting(key=key, value=value))
-    db.commit()
-
-
-def _verify_otp(email: str, code: str, db: Session) -> bool:
-    key = _otp_key(email)
-    row = db.scalar(select(AppSetting).where(AppSetting.key == key))
-    if not row or not row.value:
-        return False
-    parts = row.value.split(":")
-    if len(parts) < 2:
-        return False
-    stored_code = parts[0]
-    expiry_str = ":".join(parts[1:])
-    try:
-        expiry = datetime.fromisoformat(expiry_str)
-    except ValueError:
-        return False
-    if datetime.utcnow() > expiry:
-        return False
-    if stored_code != code.strip():
-        return False
-    # Consume the OTP
-    db.delete(row)
-    db.commit()
-    return True
-
-
-def _send_otp_email(to_email: str, code: str) -> bool:
-    """Send OTP via SMTP. Returns True if sent, False if SMTP not configured."""
-    smtp_host = os.environ.get("SMTP_HOST", "")
-    if not smtp_host:
-        log.info("SMTP not configured — OTP for %s: %s", to_email, code)
-        return False
-    try:
-        smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-        smtp_user = os.environ.get("SMTP_USER", "")
-        smtp_pass = os.environ.get("SMTP_PASSWORD", "")
-        smtp_from = os.environ.get("SMTP_FROM", smtp_user)
-
-        body = f"""Your Merantix Capital LP Portal verification code is:
-
-  {code}
-
-This code expires in {_OTP_TTL_MINUTES} minutes. If you didn't request this, ignore this email.
-
-— Merantix Capital"""
-        msg = MIMEText(body)
-        msg["Subject"] = f"{code} — Your Merantix LP Portal verification code"
-        msg["From"] = smtp_from
-        msg["To"] = to_email
-
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as s:
-            s.ehlo()
-            if smtp_port != 25:
-                s.starttls()
-            if smtp_user and smtp_pass:
-                s.login(smtp_user, smtp_pass)
-            s.sendmail(smtp_from, [to_email], msg.as_string())
-        log.info("OTP email sent to %s", to_email)
-        return True
-    except Exception as exc:
-        log.error("Failed to send OTP email to %s: %s", to_email, exc)
-        return False
-
-
 def _user_to_dict(user: LPUser) -> dict:
     return {
         "id": user.id,
@@ -170,11 +93,38 @@ def _user_to_dict(user: LPUser) -> dict:
         "looking_for": json.loads(user.looking_for) if user.looking_for else [],
         "about_yourself": user.about_yourself or "",
         "onboarding_completed": user.onboarding_completed,
-        "avatar": None,  # not stored server-side in current schema
+        "avatar": None,
     }
 
 
-# ── Request/response models ───────────────────────────────────────────────────
+def _sector_slug(sector_name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", sector_name.lower()).strip("-")
+
+
+def _venture_to_dict(v, index: int = 0) -> dict:
+    from ..models import CrmVenture
+    website = (v.website or "").replace("https://", "").replace("http://", "").rstrip("/")
+    return {
+        "id": str(v.id),
+        "name": v.name,
+        "tagline": v.description or f"{v.name} — Merantix Capital portfolio company",
+        "category": v.sector or "Deep Tech",
+        "stage": "Seed",
+        "founders": [],
+        "website": website,
+        "status": "Active",
+        "logo": (v.name or "?")[0].upper(),
+        "color": _COLORS[index % 4],
+        "hq": "",
+        "fund": "Merantix Capital",
+        "investmentYear": 2024,
+        "valuation": 0,
+        "invested": 0,
+        "growth": 0,
+    }
+
+
+# ── Request / response models ─────────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
     first_name: str
@@ -182,11 +132,6 @@ class RegisterRequest(BaseModel):
     email: str
     company: str = ""
     password: str
-
-
-class VerifyOtpRequest(BaseModel):
-    email: str
-    code: str
 
 
 class LoginRequest(BaseModel):
@@ -206,14 +151,14 @@ class UpdateProfileRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
-    session_id: str | None = None
+    session_id: str | int | None = None
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
+# ── Auth endpoints ────────────────────────────────────────────────────────────
 
 @router.post("/register")
 def api_register(body: RegisterRequest, db: Session = Depends(get_db)):
-    """Create a new LP account and send OTP to email."""
+    """Create a new LP account and return a bearer token immediately."""
     email = body.email.strip().lower()
     first = body.first_name.strip()
     last = body.last_name.strip()
@@ -226,7 +171,6 @@ def api_register(body: RegisterRequest, db: Session = Depends(get_db)):
     if db.scalar(select(LPUser).where(LPUser.email == email)):
         raise HTTPException(400, "An account with this email already exists")
 
-    # Create user (not yet active — pending OTP)
     name = f"{first} {last}".strip()
     user = LPUser(
         name=name,
@@ -237,31 +181,6 @@ def api_register(body: RegisterRequest, db: Session = Depends(get_db)):
     )
     db.add(user)
     db.commit()
-
-    # Generate + store OTP
-    code = "".join(random.choices(string.digits, k=6))
-    _store_otp(email, code, db)
-    email_sent = _send_otp_email(email, code)
-
-    return {
-        "ok": True,
-        "email_sent": email_sent,
-        # Return code only if email not sent (dev/beta mode)
-        "dev_code": code if not email_sent else None,
-        "message": f"Verification code sent to {email}" if email_sent else f"SMTP not configured — code is {code}",
-    }
-
-
-@router.post("/verify-otp")
-def api_verify_otp(body: VerifyOtpRequest, db: Session = Depends(get_db)):
-    """Verify OTP → return bearer token."""
-    email = body.email.strip().lower()
-    user = db.scalar(select(LPUser).where(LPUser.email == email))
-    if not user:
-        raise HTTPException(400, "No account found with this email")
-
-    if not _verify_otp(email, body.code, db):
-        raise HTTPException(400, "Invalid or expired verification code")
 
     token = _create_token(user, db)
     return {"ok": True, "token": token, "user": _user_to_dict(user)}
@@ -293,8 +212,9 @@ def api_update_me(
 ):
     """Update profile / complete onboarding."""
     if body.first_name is not None or body.last_name is not None:
-        first = body.first_name or current_user.name.split()[0]
-        last = body.last_name or (" ".join(current_user.name.split()[1:]) if len(current_user.name.split()) > 1 else "")
+        parts = current_user.name.split()
+        first = body.first_name if body.first_name is not None else (parts[0] if parts else "")
+        last = body.last_name if body.last_name is not None else (" ".join(parts[1:]) if len(parts) > 1 else "")
         current_user.name = f"{first} {last}".strip()
     if body.company is not None:
         current_user.organization = body.company or None
@@ -309,6 +229,129 @@ def api_update_me(
     db.commit()
     return _user_to_dict(current_user)
 
+
+@router.post("/logout")
+def api_logout(
+    authorization: Annotated[str | None, Header()] = None,
+    db: Session = Depends(get_db),
+):
+    """Invalidate the bearer token."""
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:]
+        try:
+            db.query(LPUserSession).filter(
+                LPUserSession.token_hash == _token_hash(token)
+            ).delete(synchronize_session=False)
+            db.commit()
+        except Exception:
+            db.rollback()
+    return {"ok": True}
+
+
+# ── Company endpoints ─────────────────────────────────────────────────────────
+
+@router.get("/companies")
+def api_get_companies(
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return all portfolio companies."""
+    from ..models import CrmVenture
+    ventures = db.scalars(
+        select(CrmVenture)
+        .where(func.lower(CrmVenture.stage) == "portfolio")
+        .where(CrmVenture.name.is_not(None))
+        .order_by(CrmVenture.name)
+    ).all()
+    return [_venture_to_dict(v, i) for i, v in enumerate(ventures)]
+
+
+@router.get("/companies/{company_id}")
+def api_get_company(
+    company_id: int,
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return a single portfolio company by ID."""
+    from ..models import CrmVenture
+    v = db.get(CrmVenture, company_id)
+    if v is None or (v.stage or "").lower() != "portfolio":
+        raise HTTPException(404, "Company not found")
+    return _venture_to_dict(v, company_id % 4)
+
+
+# ── Portfolio / sector endpoints ──────────────────────────────────────────────
+
+@router.get("/portfolio/sectors")
+def api_get_sectors(
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return portfolio sectors with company counts."""
+    from ..models import CrmVenture
+    rows = db.execute(
+        select(CrmVenture.sector, func.count(CrmVenture.id).label("cnt"))
+        .where(func.lower(CrmVenture.stage) == "portfolio")
+        .where(CrmVenture.name.is_not(None))
+        .where(CrmVenture.sector.is_not(None))
+        .group_by(CrmVenture.sector)
+        .order_by(func.count(CrmVenture.id).desc())
+    ).all()
+
+    sectors = []
+    total_companies = 0
+    for sector_name, cnt in rows:
+        sectors.append({
+            "name": sector_name,
+            "slug": _sector_slug(sector_name),
+            "company_count": cnt,
+            "investigation_count": 0,
+        })
+        total_companies += cnt
+
+    no_sector_count = db.scalar(
+        select(func.count(CrmVenture.id))
+        .where(func.lower(CrmVenture.stage) == "portfolio")
+        .where(CrmVenture.name.is_not(None))
+        .where(CrmVenture.sector.is_(None))
+    ) or 0
+
+    return {
+        "sectors": sectors,
+        "total_sectors": len(sectors),
+        "total_companies": total_companies + no_sector_count,
+    }
+
+
+@router.get("/portfolio/sectors/{slug}")
+def api_get_sector(
+    slug: str,
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return companies in a sector by slug."""
+    from ..models import CrmVenture
+    all_portfolio = db.scalars(
+        select(CrmVenture)
+        .where(func.lower(CrmVenture.stage) == "portfolio")
+        .where(CrmVenture.name.is_not(None))
+        .where(CrmVenture.sector.is_not(None))
+        .order_by(CrmVenture.name)
+    ).all()
+
+    matching = [v for v in all_portfolio if _sector_slug(v.sector) == slug]
+    if not matching:
+        raise HTTPException(404, "Sector not found")
+
+    return {
+        "sector_name": matching[0].sector,
+        "slug": slug,
+        "companies": [_venture_to_dict(v, i) for i, v in enumerate(matching)],
+        "investigations": [],
+    }
+
+
+# ── Chat endpoints ────────────────────────────────────────────────────────────
 
 @router.post("/chat")
 def api_chat(
@@ -334,23 +377,24 @@ def api_chat(
 
     # Get or create chat session
     session = None
-    if body.session_id:
-        session = db.scalar(
-            select(LPChatSession)
-            .where(LPChatSession.id == int(body.session_id))
-            .where(LPChatSession.lp_user_id == current_user.id)
-        )
+    if body.session_id is not None:
+        try:
+            session = db.scalar(
+                select(LPChatSession)
+                .where(LPChatSession.id == int(body.session_id))
+                .where(LPChatSession.lp_user_id == current_user.id)
+            )
+        except (ValueError, TypeError):
+            pass
     if not session:
         session = LPChatSession(lp_user_id=current_user.id)
         db.add(session)
         db.commit()
         db.refresh(session)
 
-    # Save user message
     db.add(LPChatMessage(session_id=session.id, role="user", content=message))
     db.commit()
 
-    # Portfolio query detection
     _PORTFOLIO_RE = _re.compile(
         r"\b(portfolio\s+compan|our\s+portfolio|your\s+portfolio|portfolio\s+invest|"
         r"companies.*portfolio|portfolio.*companies|list.*portfolio|what.*invested|"
@@ -401,7 +445,6 @@ def api_chat(
             log.error("LP API chat error: %s", exc, exc_info=True)
             reply = "I ran into a problem. Please try again in a moment."
 
-    # Save assistant message
     db.add(LPChatMessage(
         session_id=session.id,
         role="assistant",
@@ -412,89 +455,83 @@ def api_chat(
 
     return {
         "ok": True,
-        "session_id": session.id,
+        "session_id": str(session.id),
         "reply": reply,
         "citations": citations,
     }
 
 
-@router.post("/logout")
-def api_logout(
-    authorization: Annotated[str | None, Header()] = None,
-    db: Session = Depends(get_db),
-):
-    """Invalidate the bearer token."""
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization[7:]
-        try:
-            db.query(LPUserSession).filter(
-                LPUserSession.token_hash == _token_hash(token)
-            ).delete(synchronize_session=False)
-            db.commit()
-        except Exception:
-            db.rollback()
-    return {"ok": True}
-
-
-@router.get("/companies")
-def api_get_companies(
+@router.get("/chat/sessions")
+def api_get_chat_sessions(
     current_user: LPUser = Depends(_get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Return all portfolio companies for the browse/directory pages."""
-    from ..models import CrmVenture
-    from sqlalchemy import func as _func
+    """Return all chat sessions for the current user (summary only)."""
+    from ..models import LPChatSession, LPChatMessage
 
-    _COLORS = [
-        "oklch(0.92 0.25 120)",
-        "oklch(0.72 0.21 55)",
-        "oklch(0.18 0.01 60)",
-        "oklch(0.65 0.12 85)",
-    ]
-
-    ventures = db.scalars(
-        select(CrmVenture)
-        .where(_func.lower(CrmVenture.stage) == "portfolio")
-        .where(CrmVenture.name.is_not(None))
-        .order_by(CrmVenture.name)
+    sessions = db.scalars(
+        select(LPChatSession)
+        .where(LPChatSession.lp_user_id == current_user.id)
+        .order_by(LPChatSession.created_at.desc())
     ).all()
 
-    companies = []
-    for i, v in enumerate(ventures):
-        website = (v.website or "").replace("https://", "").replace("http://", "").rstrip("/")
-        companies.append({
-            "id": str(v.id),
-            "name": v.name,
-            "tagline": v.description or f"{v.name} — Merantix Capital portfolio company",
-            "category": v.sector or "Deep Tech",
-            "stage": "Seed",
-            "founders": [],
-            "website": website,
-            "status": "Active",
-            "logo": (v.name or "?")[0].upper(),
-            "color": _COLORS[i % 4],
-            "hq": "",
-            "fund": "Merantix Capital",
-            "investmentYear": 2024,
-            "valuation": 0,
-            "invested": 0,
-            "growth": 0,
+    result = []
+    for s in sessions:
+        messages = db.scalars(
+            select(LPChatMessage)
+            .where(LPChatMessage.session_id == s.id)
+            .order_by(LPChatMessage.created_at.asc())
+        ).all()
+
+        first_user = next((m for m in messages if m.role == "user"), None)
+        last_msg = messages[-1] if messages else None
+
+        title = (first_user.content[:60] + "…") if first_user and len(first_user.content) > 60 else (first_user.content if first_user else "General conversation")
+        last_preview = (last_msg.content[:120] + "…") if last_msg and len(last_msg.content) > 120 else (last_msg.content if last_msg else "")
+
+        result.append({
+            "id": str(s.id),
+            "title": title,
+            "message_count": len(messages),
+            "updated_at": s.created_at.isoformat() if s.created_at else None,
+            "last_message": last_preview,
         })
-    return companies
+
+    return result
 
 
-@router.post("/resend-otp")
-def api_resend_otp(body: VerifyOtpRequest, db: Session = Depends(get_db)):
-    """Resend OTP to the given email (only body.email is used)."""
-    email = body.email.strip().lower()
-    user = db.scalar(select(LPUser).where(LPUser.email == email))
-    if not user:
-        raise HTTPException(400, "No account found with this email")
-    code = "".join(random.choices(string.digits, k=6))
-    _store_otp(email, code, db)
-    email_sent = _send_otp_email(email, code)
+@router.get("/chat/sessions/{session_id}")
+def api_get_chat_session(
+    session_id: int,
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return a single chat session with its messages."""
+    from ..models import LPChatSession, LPChatMessage
+
+    session = db.scalar(
+        select(LPChatSession)
+        .where(LPChatSession.id == session_id)
+        .where(LPChatSession.lp_user_id == current_user.id)
+    )
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    messages = db.scalars(
+        select(LPChatMessage)
+        .where(LPChatMessage.session_id == session.id)
+        .order_by(LPChatMessage.created_at.asc())
+    ).all()
+
     return {
-        "ok": True,
-        "email_sent": email_sent,
-        "dev_code": code if not email_sent else None,
+        "id": str(session.id),
+        "messages": [
+            {
+                "role": m.role,
+                "content": m.content,
+                "ts": int(m.created_at.timestamp() * 1000) if m.created_at else 0,
+                "citations": json.loads(m.citations_json) if m.citations_json else [],
+            }
+            for m in messages
+        ],
     }
