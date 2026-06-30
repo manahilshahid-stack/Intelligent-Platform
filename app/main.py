@@ -67,12 +67,6 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-# Serve the React LP frontend if the build exists
-import pathlib as _pathlib
-_frontend_dir = _pathlib.Path("lp_frontend")
-if _frontend_dir.exists():
-    app.mount("/portal", StaticFiles(directory="lp_frontend", html=True), name="lp_react")
-
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(company_settings_router)
