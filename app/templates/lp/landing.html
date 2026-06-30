@@ -3,6 +3,8 @@
 
 {% block head %}
 <style>
+  /* Hide base template's ambient elements — landing has its own */
+  .ambient-top, .ambient-bot, .grid-bg { display: none !important; }
   body { overflow-x: hidden; background: oklch(1 0 0); color: oklch(0.16 0 0); }
 
   /* ── Design tokens (exact match to reference) ─── */
@@ -346,7 +348,7 @@
 {% endblock %}
 
 {% block body %}
-<div style="position:relative;min-height:100vh;overflow:hidden;">
+<div style="position:relative;min-height:100vh;overflow-x:hidden;background:oklch(1 0 0);">
   <div class="blob-tl"></div>
   <div class="blob-br"></div>
   <div class="grid-bg-lp"></div>
