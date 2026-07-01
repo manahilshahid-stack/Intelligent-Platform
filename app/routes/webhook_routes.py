@@ -156,24 +156,14 @@ async def attio_webhook(request: Request):
         _fire(_handle_note_event, note_id)
         return {"status": "accepted", "event": event_type, "note_id": note_id}
 
-    # ── Record events ─────────────────────────────────────────────────────────
-    if event_type in ("record.created", "record.updated"):
-        id_obj = data.get("id", {})
-        record_id = id_obj.get("record_id") if isinstance(id_obj, dict) else None
-        object_slug = data.get("object_type", {})
-        if isinstance(object_slug, dict):
-            object_slug = object_slug.get("api_slug", "")
-
-        if not record_id:
-            return {"status": "ignored", "reason": "no record_id in payload"}
-
-        _fire(_handle_record_event, record_id, object_slug or "")
-        return {"status": "accepted", "event": event_type, "record_id": record_id}
-
-    # ── List-entry events (stage / status changes) ────────────────────────────
-    # Fired when a company moves between pipeline stages in Attio (e.g. "dd" → "Portfolio").
-    # We can't sync a single entry efficiently here, so we re-sync the full list.
-    if event_type in ("list-entry.created", "list-entry.updated", "list-entry.deleted"):
+    # ── Record + list-entry events → full list re-sync ───────────────────────
+    # All company changes (name, website, stage, status) are handled by
+    # re-syncing the full Attio list. This is the only reliable approach since
+    # ventures are keyed by attio_entry_id (list entries), not attio_record_id.
+    if event_type in (
+        "record.created", "record.updated", "record.deleted",
+        "list-entry.created", "list-entry.updated", "list-entry.deleted",
+    ):
         _fire(_handle_list_entry_event)
         return {"status": "accepted", "event": event_type}
 
