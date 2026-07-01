@@ -259,7 +259,7 @@ def api_get_companies(
     from ..models import CrmVenture
     ventures = db.scalars(
         select(CrmVenture)
-        .where(func.lower(CrmVenture.stage) == "portfolio")
+        .where(func.lower(CrmVenture.stage).contains("portfolio"))
         .where(CrmVenture.name.is_not(None))
         .order_by(CrmVenture.name)
     ).all()
@@ -275,7 +275,7 @@ def api_get_company(
     """Return a single portfolio company by ID."""
     from ..models import CrmVenture
     v = db.get(CrmVenture, company_id)
-    if v is None or (v.stage or "").lower() != "portfolio":
+    if v is None or "portfolio" not in (v.stage or "").lower():
         raise HTTPException(404, "Company not found")
     return _venture_to_dict(v, company_id % 4)
 
@@ -291,7 +291,7 @@ def api_get_sectors(
     from ..models import CrmVenture
     rows = db.execute(
         select(CrmVenture.sector, func.count(CrmVenture.id).label("cnt"))
-        .where(func.lower(CrmVenture.stage) == "portfolio")
+        .where(func.lower(CrmVenture.stage).contains("portfolio"))
         .where(CrmVenture.name.is_not(None))
         .where(CrmVenture.sector.is_not(None))
         .group_by(CrmVenture.sector)
@@ -311,7 +311,7 @@ def api_get_sectors(
 
     no_sector_count = db.scalar(
         select(func.count(CrmVenture.id))
-        .where(func.lower(CrmVenture.stage) == "portfolio")
+        .where(func.lower(CrmVenture.stage).contains("portfolio"))
         .where(CrmVenture.name.is_not(None))
         .where(CrmVenture.sector.is_(None))
     ) or 0
@@ -333,7 +333,7 @@ def api_get_sector(
     from ..models import CrmVenture
     all_portfolio = db.scalars(
         select(CrmVenture)
-        .where(func.lower(CrmVenture.stage) == "portfolio")
+        .where(func.lower(CrmVenture.stage).contains("portfolio"))
         .where(CrmVenture.name.is_not(None))
         .where(CrmVenture.sector.is_not(None))
         .order_by(CrmVenture.name)
