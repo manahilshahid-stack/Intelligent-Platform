@@ -154,9 +154,9 @@ def call_chat(user_message: str, context: str, api_key: str,
         {"role": "system", "content": system_prompt},
     ]
     
-    # Add previous conversation messages (last 6 to maintain context without exceeding token limits)
+    # Add previous conversation messages (last 10 to maintain context without exceeding token limits)
     if previous_messages:
-        for msg in previous_messages[-6:]:
+        for msg in previous_messages[-10:]:
             messages.append({
                 "role": msg.role,
                 "content": msg.content
@@ -185,7 +185,7 @@ def call_chat(user_message: str, context: str, api_key: str,
     payload = {
         "model": _cfg.openrouter_chat_model,
         "messages": messages,
-        "temperature": 0.2,
+        "temperature": 0.4,
         "max_tokens": 8000,
     }
 
