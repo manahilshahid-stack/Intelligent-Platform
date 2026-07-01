@@ -871,7 +871,7 @@ def list_ventures_by_category(db: "Session", term: str, limit: int = 50, lp_scop
     # LP scope: only surface portfolio-stage companies
     from sqlalchemy import func as _func
     _stage_filter = (
-        _func.lower(CrmVenture.stage) == _LP_PORTFOLIO_STAGE
+        _func.lower(CrmVenture.stage).contains(_LP_PORTFOLIO_STAGE)
         if lp_scope else None
     )
 
@@ -1015,7 +1015,7 @@ def retrieve_for_chat(
             from sqlalchemy import func as _func
             portfolio_ids = set(db.scalars(
                 select(_CrmVenture.id).where(
-                    _func.lower(_CrmVenture.stage) == _LP_PORTFOLIO_STAGE
+                    _func.lower(_CrmVenture.stage).contains(_LP_PORTFOLIO_STAGE)
                 )
             ).all())
             if portfolio_ids:
