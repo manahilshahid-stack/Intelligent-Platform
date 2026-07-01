@@ -251,6 +251,19 @@ def api_logout(
 
 # ── Company endpoints ─────────────────────────────────────────────────────────
 
+@router.get("/public/companies")
+def api_get_public_companies(db: Session = Depends(get_db)):
+    """Public endpoint — returns just names and sectors for the landing page marquee. No auth required."""
+    from ..models import CrmVenture
+    rows = db.execute(
+        select(CrmVenture.name, CrmVenture.sector)
+        .where(func.lower(CrmVenture.stage).contains("portfolio"))
+        .where(CrmVenture.name.is_not(None))
+        .order_by(CrmVenture.name)
+    ).all()
+    return [{"name": r[0], "sector": r[1] or "Deep Tech"} for r in rows]
+
+
 @router.get("/companies")
 def api_get_companies(
     current_user: LPUser = Depends(_get_current_user),
