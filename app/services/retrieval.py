@@ -1007,24 +1007,11 @@ def retrieve_for_chat(
     # Gather a larger candidate pool so the reranker has something to sharpen.
     pool = max(limit, _RERANK_POOL)
 
-    # For LP scope, restrict knowledge retrieval to portfolio-stage ventures only
+    # LP scope: search ALL knowledge chunks (portfolio + pipeline + evaluations).
+    # Financial details, deal stages and pipeline status are redacted downstream
+    # by redact_confidential() and the LLM guardrail — not at retrieval time.
+    # This gives LPs the full picture of what Merantix knows about any company.
     lp_filters = dict(filters or {})
-    if viewer_scope == "lp":
-        try:
-            from ..models import CrmVenture as _CrmVenture
-            from sqlalchemy import func as _func
-            portfolio_ids = set(db.scalars(
-                select(_CrmVenture.id).where(
-                    _func.lower(_CrmVenture.stage).contains(_LP_PORTFOLIO_STAGE)
-                )
-            ).all())
-            if portfolio_ids:
-                lp_filters["crm_venture_ids"] = portfolio_ids
-                log.info("retrieve_for_chat: LP scope — restricting to %d portfolio ventures", len(portfolio_ids))
-            else:
-                log.warning("retrieve_for_chat: no portfolio ventures found in DB — LP filter skipped")
-        except Exception as exc:
-            log.warning("retrieve_for_chat: could not build LP portfolio filter: %s", exc)
 
     portfolio: list[ChunkResult] = []
     knowledge: list[ChunkResult] = []
