@@ -562,3 +562,24 @@ def api_get_chat_session(
             for m in messages
         ],
     }
+
+
+@router.delete("/chat/sessions/{session_id}")
+def api_delete_chat_session(
+    session_id: int,
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a chat session and all its messages."""
+    from ..models import LPChatSession, LPChatMessage
+    session = db.scalar(
+        select(LPChatSession)
+        .where(LPChatSession.id == session_id)
+        .where(LPChatSession.lp_user_id == current_user.id)
+    )
+    if not session:
+        raise HTTPException(404, "Session not found")
+    db.query(LPChatMessage).filter(LPChatMessage.session_id == session_id).delete(synchronize_session=False)
+    db.delete(session)
+    db.commit()
+    return {"ok": True}
