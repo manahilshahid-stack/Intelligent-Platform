@@ -446,6 +446,16 @@ def api_chat(
             )
             if chunks:
                 context = build_context(chunks)
+                # If the request came from a company detail page, prepend the current
+                # name so the AI always uses it even if indexed docs have an old name.
+                if body.company_name:
+                    context = (
+                        f"IMPORTANT: The company being discussed is currently named "
+                        f"'{body.company_name}'. Any references to previous names in "
+                        f"the documents below refer to the same company — always use "
+                        f"'{body.company_name}' as the name in your response.\n\n"
+                        + context
+                    )
                 citations = [
                     {
                         "index": i + 1,
