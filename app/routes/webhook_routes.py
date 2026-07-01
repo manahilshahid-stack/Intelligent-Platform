@@ -100,6 +100,24 @@ def _handle_record_event(attio_record_id: str, object_slug: str) -> None:
         db.close()
 
 
+def _handle_list_entry_event() -> None:
+    """Re-sync the full Attio list when a stage/status changes. Runs in a background thread."""
+    from ..database import SessionLocal
+    from ..services.attio_sync import sync_attio_list_ventures
+    from ..services.knowledge_indexer import index_all_crm_ventures
+
+    db = SessionLocal()
+    try:
+        log.info("webhook: list-entry change — re-syncing full venture list…")
+        sync_attio_list_ventures(db)
+        index_all_crm_ventures(db)
+        log.info("webhook: list-entry sync complete")
+    except Exception as exc:
+        log.error("webhook: list-entry sync failed: %s", exc, exc_info=True)
+    finally:
+        db.close()
+
+
 def _fire(fn, *args) -> None:
     """Run fn(*args) in a daemon thread — never blocks the HTTP response."""
     t = threading.Thread(target=fn, args=args, daemon=True)
@@ -151,5 +169,12 @@ async def attio_webhook(request: Request):
 
         _fire(_handle_record_event, record_id, object_slug or "")
         return {"status": "accepted", "event": event_type, "record_id": record_id}
+
+    # ── List-entry events (stage / status changes) ────────────────────────────
+    # Fired when a company moves between pipeline stages in Attio (e.g. "dd" → "Portfolio").
+    # We can't sync a single entry efficiently here, so we re-sync the full list.
+    if event_type in ("list-entry.created", "list-entry.updated", "list-entry.deleted"):
+        _fire(_handle_list_entry_event)
+        return {"status": "accepted", "event": event_type}
 
     return {"status": "ignored", "reason": f"unhandled event type: {event_type}"}
