@@ -152,6 +152,7 @@ class UpdateProfileRequest(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     session_id: str | int | None = None
+    company_name: str | None = None  # set by company detail page to focus retrieval
 
 
 # ── Auth endpoints ────────────────────────────────────────────────────────────
@@ -419,6 +420,9 @@ def api_chat(
             prior = list(session.messages)[:-1]
             temp_user = User(id=current_user.id, company_id=None, role=UserRole.admin)
             search_query, focus_company = condense_query(message, prior, db)
+            # If the request came from a company detail page, always focus on that company
+            if not focus_company and body.company_name:
+                focus_company = body.company_name
             chunks = retrieve_for_chat(
                 query=search_query,
                 user=temp_user,
