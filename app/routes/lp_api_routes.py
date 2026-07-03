@@ -489,6 +489,11 @@ def api_chat(
                 alias_note = _build_alias_context()
                 if alias_note:
                     context = alias_note + "\n\n" + context
+                # Prepend deterministic scores if this is a sector/company evaluation query
+                from ..services.scoring_service import detect_and_score
+                score_context = detect_and_score(message, focus_company, db)
+                if score_context:
+                    context = score_context + "\n\n" + context
                 # If from company detail page, also pin the specific company name
                 if body.company_name:
                     context = (
