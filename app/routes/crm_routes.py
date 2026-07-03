@@ -120,18 +120,45 @@ def trigger_reindex(
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    import urllib.parse
-    from ..services.knowledge_indexer import index_all_crm_ventures
-    try:
-        result = index_all_crm_ventures(db)
-        msg = urllib.parse.quote(
-            f"Re-indexed {result['indexed']} ventures"
-            + (f" ({result['errors']} errors)" if result["errors"] else "")
-        )
-        return RedirectResponse(f"/admin/crm/ventures?reindex_ok={msg}", status_code=303)
-    except Exception as exc:
-        err = urllib.parse.quote(str(exc)[:300])
-        return RedirectResponse(f"/admin/crm/ventures?reindex_error={err}", status_code=303)
+    """Run venture reindex in a background thread — avoids HTTP timeout for large datasets."""
+    import threading
+    from datetime import datetime
+
+    run = CrmSyncRun(
+        sync_type="ventures_reindex",
+        status=CrmSyncStatus.running,
+        started_at=datetime.utcnow(),
+        records_seen=0,
+        records_created=0,
+        records_updated=0,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    run_id = run.id
+
+    def _do():
+        from ..database import SessionLocal
+        from ..services.knowledge_indexer import index_all_crm_ventures
+        from ..services.attio_sync import _finish_run, _fail_run
+        bg = SessionLocal()
+        try:
+            bg_run = bg.get(CrmSyncRun, run_id)
+            result = index_all_crm_ventures(bg)
+            if bg_run:
+                bg_run.records_seen = result.get("total", 0)
+                bg_run.records_updated = result.get("indexed", 0)
+                _finish_run(bg_run, bg)
+        except Exception as exc:
+            log.error("Venture reindex background error: %s", exc, exc_info=True)
+            bg_run = bg.get(CrmSyncRun, run_id)
+            if bg_run:
+                _fail_run(bg_run, str(exc)[:2000], bg)
+        finally:
+            bg.close()
+
+    threading.Thread(target=_do, daemon=True).start()
+    return RedirectResponse(f"/admin/crm/sync/progress/{run_id}", status_code=303)
 
 
 @router.post("/gdrive/ingest", response_class=HTMLResponse)
