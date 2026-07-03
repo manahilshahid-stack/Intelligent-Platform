@@ -38,6 +38,43 @@ from ..database import get_db
 from ..models import AppSetting, LPUser, LPUserSession
 
 log = logging.getLogger(__name__)
+
+# ── Company name aliases ──────────────────────────────────────────────────────
+# Maps current name → list of former names.
+# Used for query expansion (search for old names too) and AI context injection.
+# Update this whenever a portfolio company is renamed in Attio.
+COMPANY_ALIASES: dict[str, list[str]] = {
+    "almetra":          ["deltia", "deltia.ai"],
+    "whistle robotics": ["foundry robotics", "foundary robotics"],
+    "revel8":           ["company shield"],
+}
+
+# Flat reverse map: old name → current name (for display correction)
+_OLD_TO_NEW: dict[str, str] = {
+    old.lower(): new
+    for new, olds in COMPANY_ALIASES.items()
+    for old in olds
+}
+
+def _expand_query_with_aliases(query: str) -> str:
+    """Append old company names to the search query so embeddings match historical notes."""
+    q_lower = query.lower()
+    extras: list[str] = []
+    for current, old_names in COMPANY_ALIASES.items():
+        if current in q_lower:
+            extras.extend(old_names)
+    if extras:
+        return query + " " + " ".join(extras)
+    return query
+
+def _build_alias_context() -> str:
+    """Build a context note about company renames to inject into the system prompt."""
+    if not COMPANY_ALIASES:
+        return ""
+    lines = ["COMPANY NAME CHANGES (use the current name in all responses):"]
+    for current, old_names in COMPANY_ALIASES.items():
+        lines.append(f"- {current.title()} was formerly known as: {', '.join(n.title() for n in old_names)}")
+    return "\n".join(lines)
 router = APIRouter(prefix="/api/lp")
 
 _COLORS = [
@@ -436,6 +473,8 @@ def api_chat(
             # If the request came from a company detail page, always focus on that company
             if not focus_company and body.company_name:
                 focus_company = body.company_name
+            # Expand search query with old company names so notes using former names are found
+            search_query = _expand_query_with_aliases(search_query)
             chunks = retrieve_for_chat(
                 query=search_query,
                 user=temp_user,
@@ -446,8 +485,11 @@ def api_chat(
             )
             if chunks:
                 context = build_context(chunks)
-                # If the request came from a company detail page, prepend the current
-                # name so the AI always uses it even if indexed docs have an old name.
+                # Prepend alias map so AI always uses current names
+                alias_note = _build_alias_context()
+                if alias_note:
+                    context = alias_note + "\n\n" + context
+                # If from company detail page, also pin the specific company name
                 if body.company_name:
                     context = (
                         f"IMPORTANT: The company being discussed is currently named "
