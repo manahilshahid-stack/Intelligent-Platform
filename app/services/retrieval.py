@@ -731,14 +731,43 @@ _CRM_SOURCE_TYPES = {"crm_venture", "crm_note", "crm_file", "knowledge", "gdrive
 _FREE_TEXT_SOURCES = {"crm_note", "crm_file", "gdrive"}
 
 
+import re as _re_redact
+
+# Regex patterns that redact financial figures and personal names embedded in narrative text
+_FINANCIAL_RE = _re_redact.compile(
+    r"""
+    (?:
+        [\$€£]\s*[\d,]+(?:\.\d+)?\s*(?:M|K|B|m|k|b|million|billion|thousand)?\b  # $18M, €200k
+        | \b[\d,]+(?:\.\d+)?\s*(?:M|B|K)\s*(?:USD|EUR|GBP)?\b                    # 18M USD
+        | \b\d+[xX]\s*(?:return|multiple|MOIC)\b                                   # 3x return
+        | \b(?:100|200|300|400|500)-(?:100|200|300|400|500)\s*(?:M|million)\b      # 100-300 million
+        | \bpost.?money\s+valuation\b                                               # post-money valuation
+        | \bcheck\s+size\b                                                          # check size
+        | \bpre.?seed\s+to\s+seed\b                                                # pre-seed to seed
+    )
+    """,
+    _re_redact.VERBOSE | _re_redact.IGNORECASE,
+)
+
+# Sentences that contain internal decision-making language — strip entire sentence
+_INTERNAL_DECISION_RE = _re_redact.compile(
+    r'[^.!?\n]*(?:Julia|explicitly stated|Merantix would|beyond Merantix range|'
+    r'fall outside|participation range|comfort zone|stretches? their|'
+    r'noted (?:a|that)|suggested|recommended against|investment decision|'
+    r'IC review|investment committee)[^.!?\n]*[.!?\n]',
+    _re_redact.IGNORECASE,
+)
+
+
 def redact_confidential(
     results: list[ChunkResult],
     only_source_types: set[str] | None = None,
 ) -> list[ChunkResult]:
     """
-    Strip confidential lines (financials, investment amounts, deal pipeline,
-    personal info) from chunk text. If *only_source_types* is given, redact only
-    chunks whose source_type is in that set; otherwise redact every result.
+    Strip confidential content from chunk text before it reaches the LLM.
+    Two-pass approach:
+    1. Line-level: drop lines starting with confidential field prefixes
+    2. Regex-level: redact financial figures and internal decision language embedded in narrative
     """
     for r in results:
         if only_source_types is not None and r.source_type not in only_source_types:
@@ -748,14 +777,18 @@ def redact_confidential(
         for line in r.text.splitlines():
             stripped = line.strip().lower()
             if skip_source and line[:1] in (" ", "\t") and stripped.startswith("["):
-                continue  # drop the indented [source snippet] under a redacted field
+                continue
             skip_source = False
             if any(stripped.startswith(p + ":") or stripped.startswith(p + " ")
                    for p in _CONFIDENTIAL_PREFIXES):
                 skip_source = True
                 continue
             kept.append(line)
-        r.text = "\n".join(kept)
+        # Pass 2: regex redaction of financial figures and internal decision sentences
+        cleaned = "\n".join(kept)
+        cleaned = _FINANCIAL_RE.sub("[amount redacted]", cleaned)
+        cleaned = _INTERNAL_DECISION_RE.sub("", cleaned)
+        r.text = cleaned
     return results
 
 
