@@ -56,7 +56,7 @@ app = FastAPI(title="Portfolio Intelligence Platform", lifespan=lifespan)
 # e.g. "https://portfolio-insight-hub.YOUR_SUBDOMAIN.workers.dev,http://localhost:5173"
 _cors_origins = os.environ.get(
     "CORS_ORIGINS",
-    "http://localhost:3000,http://localhost:5173,https://localhost:3000"
+    "http://localhost:3000,http://localhost:5173,https://portfolio-insight-hub.merantix-capital.workers.dev"
 ).split(",")
 app.add_middleware(
     CORSMiddleware,

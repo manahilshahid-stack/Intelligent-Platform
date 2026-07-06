@@ -27,7 +27,8 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -630,3 +631,171 @@ def api_delete_chat_session(
     db.delete(session)
     db.commit()
     return {"ok": True}
+
+
+# ── Streaming chat endpoint ───────────────────────────────────────────────────
+
+@router.post("/chat/stream")
+async def api_chat_stream(
+    body: ChatRequest,
+    background_tasks: BackgroundTasks,
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Streaming version of chat using Server-Sent Events.
+    Tokens are sent as they arrive from OpenRouter so the UI can render them immediately.
+    Events: {"type":"session","session_id":"..."} | {"type":"token","text":"..."} | {"type":"done"}
+    """
+    from ..models import LPChatSession, LPChatMessage, User, UserRole
+    from ..services.retrieval import retrieve_for_chat, detect_category_list_intent, list_ventures_by_category, format_enumeration_answer
+    from ..services.chat_service import build_context, call_chat_stream, strip_invalid_citations
+    from ..services.settings_service import get_openrouter_api_key
+    from ..services.query_rewriter import condense_query
+    from ..services.scoring_service import detect_and_score
+    import re as _re
+
+    message = body.message.strip()
+    if not message:
+        raise HTTPException(400, "Message cannot be empty")
+
+    api_key = get_openrouter_api_key(db)
+    if not api_key:
+        raise HTTPException(503, "AI service not configured")
+
+    # Get or create session
+    session = None
+    if body.session_id is not None:
+        try:
+            session = db.scalar(
+                select(LPChatSession)
+                .where(LPChatSession.id == int(body.session_id))
+                .where(LPChatSession.lp_user_id == current_user.id)
+            )
+        except (ValueError, TypeError):
+            pass
+    if not session:
+        session = LPChatSession(lp_user_id=current_user.id)
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+
+    db.add(LPChatMessage(session_id=session.id, role="user", content=message))
+    db.commit()
+
+    # Build context (same as regular chat)
+    _PORTFOLIO_RE = _re.compile(
+        r"\b(portfolio\s+compan|our\s+portfolio|your\s+portfolio|portfolio\s+invest|"
+        r"companies.*portfolio|portfolio.*companies|list.*portfolio|what.*invested|"
+        r"which.*invested|show.*portfolio)\b", _re.I,
+    )
+
+    context = ""
+    citations: list[dict] = []
+    prior = list(session.messages)[:-1]
+    temp_user = User(id=current_user.id, company_id=None, role=UserRole.admin)
+
+    enum_term = "*" if _PORTFOLIO_RE.search(message) else detect_category_list_intent(message)
+    enum_items, enum_total = [], 0
+    if enum_term:
+        try:
+            enum_items, enum_total = list_ventures_by_category(db, enum_term, limit=50, lp_scope=True)
+        except Exception as exc:
+            log.warning("LP enumeration failed: %s", exc)
+
+    if enum_term and enum_total:
+        # Structured enumeration — not streamed, return directly
+        reply = format_enumeration_answer(enum_term, enum_items, enum_total, show_stage=False)
+        db.add(LPChatMessage(session_id=session.id, role="assistant", content=reply))
+        db.commit()
+
+        async def _enum_stream():
+            yield f"data: {json.dumps({'type': 'session', 'session_id': str(session.id)})}\n\n"
+            # Send as tokens for consistent UI
+            for word in reply.split(" "):
+                yield f"data: {json.dumps({'type': 'token', 'text': word + ' '})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        return StreamingResponse(_enum_stream(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    # RAG retrieval
+    try:
+        search_query, focus_company = condense_query(message, prior, db)
+        if not focus_company and body.company_name:
+            focus_company = body.company_name
+        search_query = _expand_query_with_aliases(search_query)
+        chunks = retrieve_for_chat(query=search_query, user=temp_user, db=db,
+                                   limit=25, viewer_scope="lp", focus_company=focus_company)
+    except Exception as exc:
+        log.error("Streaming retrieval error: %s", exc, exc_info=True)
+        chunks = []
+
+    if not chunks:
+        fallback = "I could not find relevant portfolio data for this question. Please try asking about specific companies or investment themes."
+        db.add(LPChatMessage(session_id=session.id, role="assistant", content=fallback))
+        db.commit()
+
+        async def _fallback_stream():
+            yield f"data: {json.dumps({'type': 'session', 'session_id': str(session.id)})}\n\n"
+            yield f"data: {json.dumps({'type': 'token', 'text': fallback})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        return StreamingResponse(_fallback_stream(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    # Build context with aliases + scoring
+    context = build_context(chunks)
+    alias_note = _build_alias_context()
+    if alias_note:
+        context = alias_note + "\n\n" + context
+    score_context = detect_and_score(message, focus_company, db)
+    if score_context:
+        context = score_context + "\n\n" + context
+    if body.company_name:
+        context = (f"IMPORTANT: The company being discussed is currently named '{body.company_name}'. "
+                   f"Any references to previous names refer to the same company — always use "
+                   f"'{body.company_name}' as the name in your response.\n\n" + context)
+
+    session_id_str = str(session.id)
+    collected: list[str] = []
+
+    def _save_reply():
+        from ..database import SessionLocal
+        bg = SessionLocal()
+        try:
+            full = "".join(collected)
+            full = strip_invalid_citations(full, len(citations))
+            bg.add(LPChatMessage(session_id=int(session_id_str), role="assistant",
+                                 content=full,
+                                 citations_json=json.dumps(citations) if citations else None))
+            bg.commit()
+        except Exception as exc:
+            log.error("Stream save reply failed: %s", exc)
+        finally:
+            bg.close()
+
+    background_tasks.add_task(_save_reply)
+
+    async def _stream():
+        yield f"data: {json.dumps({'type': 'session', 'session_id': session_id_str})}\n\n"
+        try:
+            async for token in call_chat_stream(
+                message, context, api_key,
+                previous_messages=list(session.messages),
+                viewer_scope="lp",
+            ):
+                collected.append(token)
+                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
+        except Exception as exc:
+            log.error("Streaming LLM error: %s", exc, exc_info=True)
+            err = " [Stream interrupted. Please try again.]"
+            collected.append(err)
+            yield f"data: {json.dumps({'type': 'token', 'text': err})}\n\n"
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

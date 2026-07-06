@@ -4,8 +4,10 @@ OpenRouter to produce a grounded, cited answer.
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
+from typing import AsyncGenerator
 
 import httpx
 
@@ -318,4 +320,65 @@ def call_chat(user_message: str, context: str, api_key: str,
         
     except (KeyError, IndexError, TypeError) as exc:
         raise RuntimeError(f"Unexpected OpenRouter response shape: {exc}") from exc
+
+
+async def call_chat_stream(
+    user_message: str,
+    context: str,
+    api_key: str,
+    previous_messages: list | None = None,
+    viewer_scope: str = "admin",
+) -> AsyncGenerator[str, None]:
+    """
+    Async generator that streams text tokens from OpenRouter.
+    Yields each token as it arrives so the frontend can display it immediately.
+    """
+    from ..config import settings as _cfg
+
+    system_prompt = _SYSTEM
+    if viewer_scope == "lp":
+        system_prompt += _LP_GUARDRAIL
+    elif viewer_scope == "company_user":
+        system_prompt += _COMPANY_GUARDRAIL
+
+    messages = [{"role": "system", "content": system_prompt}]
+    if previous_messages:
+        for msg in previous_messages[-10:]:
+            messages.append({"role": msg.role, "content": msg.content})
+    messages.append({
+        "role": "user",
+        "content": f"Context:\n\n{context}\n\nQuestion: {user_message}",
+    })
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://portfolio-intelligence.app",
+        "X-Title": "Portfolio Intelligence Platform",
+    }
+    payload = {
+        "model": _cfg.openrouter_chat_model,
+        "messages": messages,
+        "temperature": 0.4,
+        "max_tokens": 8000,
+        "stream": True,
+    }
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        async with client.stream(
+            "POST", OPENROUTER_CHAT_URL, json=payload, headers=headers
+        ) as response:
+            async for line in response.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                    delta = chunk["choices"][0]["delta"].get("content", "")
+                    if delta:
+                        yield delta
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
 
