@@ -13,6 +13,7 @@ cross-encoder) can be swapped in later behind `rerank_candidates`.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from typing import TYPE_CHECKING
 
@@ -76,8 +77,11 @@ def rerank_candidates(query: str, candidates: list, db: "Session", top_k: int) -
         "HTTP-Referer": "https://portfolio-intelligence.app",
         "X-Title": "Portfolio Intelligence Platform",
     }
+    # Use a fast cheap model for reranking — it only outputs a list of numbers,
+    # not a quality response. This saves 5-10s vs using the main Sonnet model.
+    rerank_model = os.environ.get("OPENROUTER_RERANK_MODEL", "openai/gpt-4o-mini")
     payload = {
-        "model": _cfg.openrouter_chat_model,
+        "model": rerank_model,
         "messages": [
             {"role": "system", "content": _SYSTEM},
             {"role": "user", "content": user_msg},

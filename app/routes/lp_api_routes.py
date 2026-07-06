@@ -719,7 +719,7 @@ async def api_chat_stream(
         return StreamingResponse(_enum_stream(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-    # RAG retrieval
+    # ── All sync pipeline work done before streaming begins ──────────────────
     try:
         search_query, focus_company = condense_query(message, prior, db)
         if not focus_company and body.company_name:
@@ -744,7 +744,6 @@ async def api_chat_stream(
         return StreamingResponse(_fallback_stream(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-    # Build context with aliases + scoring
     context = build_context(chunks)
     alias_note = _build_alias_context()
     if alias_note:
@@ -758,6 +757,7 @@ async def api_chat_stream(
                    f"'{body.company_name}' as the name in your response.\n\n" + context)
 
     session_id_str = str(session.id)
+    previous_msgs = list(session.messages)
     collected: list[str] = []
 
     def _save_reply():
@@ -778,11 +778,13 @@ async def api_chat_stream(
     background_tasks.add_task(_save_reply)
 
     async def _stream():
+        # Send session + status immediately so the UI shows activity right away
         yield f"data: {json.dumps({'type': 'session', 'session_id': session_id_str})}\n\n"
+        yield f"data: {json.dumps({'type': 'status', 'text': 'Laura is preparing your answer…'})}\n\n"
         try:
             async for token in call_chat_stream(
                 message, context, api_key,
-                previous_messages=list(session.messages),
+                previous_messages=previous_msgs,
                 viewer_scope="lp",
             ):
                 collected.append(token)
