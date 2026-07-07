@@ -44,7 +44,17 @@ Railway automatically sets `RAILWAY_ENVIRONMENT`, which enables secure cookies. 
 ### Setup
 
 ```bash
-git clone https://github.com/oliverschmied02-ai/intelligence-platform
+git clone git clone https://github.com/oliverschmied02-ai/intelligence-platform
+cd intelligence-platform
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# Optional: copy and edit environment variables
+cp .env.example .env   # or set them in your shell
+
+uvicorn app.main:app --reload
 cd intelligence-platform
 
 python3 -m venv .venv
@@ -75,7 +85,7 @@ SECRET_KEY=any-long-random-string-for-local-dev
 ## Create the First Admin User
 
 The first registered user is always created with role `user`.  
-Promote them to admin via the database directly:
+Promote them to admin via the database directly: Should be only one admin and no user this is for data ingestion control
 
 **SQLite (local dev):**
 ```bash
