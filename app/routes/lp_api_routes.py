@@ -498,10 +498,14 @@ def api_chat(
                 # If from company detail page, also pin the specific company name
                 if body.company_name:
                     context = (
-                        f"IMPORTANT: The company being discussed is currently named "
-                        f"'{body.company_name}'. Any references to previous names in "
-                        f"the documents below refer to the same company — always use "
-                        f"'{body.company_name}' as the name in your response.\n\n"
+                        f"COMPANY FOCUS MODE — STRICT: This conversation is exclusively about "
+                        f"'{body.company_name}'. You must ONLY answer questions about this company. "
+                        f"Do not discuss, compare, or mention any other company unless the user "
+                        f"explicitly asks for a comparison. If the user asks something unrelated to "
+                        f"'{body.company_name}', redirect them: 'This chat is focused on {body.company_name} — "
+                        f"please use the main AI Analyst for broader questions.' "
+                        f"Any references to previous names in the documents below refer to the same company — "
+                        f"always use '{body.company_name}' as the name in your response.\n\n"
                         + context
                     )
                 citations = [
