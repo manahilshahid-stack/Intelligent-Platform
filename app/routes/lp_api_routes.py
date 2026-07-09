@@ -805,3 +805,141 @@ async def api_chat_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── Email summary endpoint ────────────────────────────────────────────────────
+
+@router.post("/chat/sessions/{session_id}/email-summary")
+def api_email_summary(
+    session_id: int,
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Generate a structured summary of a chat session and email it to the LP."""
+    from ..models import LPChatSession, LPChatMessage
+    from ..services.settings_service import get_openrouter_api_key
+    import os, httpx
+
+    # Fetch session + messages
+    session = db.scalar(
+        select(LPChatSession)
+        .where(LPChatSession.id == session_id)
+        .where(LPChatSession.lp_user_id == current_user.id)
+    )
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    messages = db.scalars(
+        select(LPChatMessage)
+        .where(LPChatMessage.session_id == session.id)
+        .order_by(LPChatMessage.created_at.asc())
+    ).all()
+
+    if len(messages) < 2:
+        raise HTTPException(400, "Not enough conversation to summarise")
+
+    # Build transcript for the LLM
+    transcript = "\n\n".join(
+        f"{'LP' if m.role == 'user' else 'Laura'}: {m.content}"
+        for m in messages
+    )
+
+    # Generate summary via OpenRouter
+    api_key = get_openrouter_api_key(db)
+    if not api_key:
+        raise HTTPException(503, "AI service not configured")
+
+    from ..config import settings as _cfg
+    summary_prompt = f"""You are summarising a conversation between a Limited Partner and Laura,
+Merantix Capital's AI analyst. Create a concise, professional email summary.
+
+Structure it as:
+**Session Summary — Merantix LP Portal**
+
+**Key Questions Asked**
+- List the main questions the LP raised
+
+**Key Insights**
+- The most important insights and answers from the conversation
+
+**Companies Discussed**
+- List company names and one-line takeaway for each
+
+**Follow-up Topics**
+- Any questions that warrant further exploration
+
+Keep it concise and professional. No financial figures, no internal details.
+
+CONVERSATION:
+{transcript}"""
+
+    try:
+        resp = httpx.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            json={
+                "model": _cfg.openrouter_chat_model,
+                "messages": [{"role": "user", "content": summary_prompt}],
+                "temperature": 0.3,
+                "max_tokens": 1500,
+            },
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        summary_text = resp.json()["choices"][0]["message"]["content"]
+    except Exception as exc:
+        log.error("Summary generation failed: %s", exc)
+        raise HTTPException(503, "Failed to generate summary")
+
+    # Send email via Resend
+    resend_key = os.environ.get("RESEND_API_KEY", "")
+    email_from = os.environ.get("EMAIL_FROM", "laura@summary.merantix.com")
+
+    if not resend_key:
+        raise HTTPException(503, "Email service not configured")
+
+    name = current_user.name or current_user.email
+    first_name = name.split()[0] if name else "there"
+
+    # Convert markdown bold to HTML
+    import re
+    html_summary = summary_text.replace("\n", "<br>")
+    html_summary = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html_summary)
+
+    html_body = f"""
+    <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a1a;">
+      <div style="padding: 32px 0 16px; border-bottom: 1px solid #e5e5e5;">
+        <p style="margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em; color: #888;">Merantix Capital · LP Portal</p>
+        <h1 style="margin: 8px 0 0; font-size: 22px; font-weight: 700;">Your session summary</h1>
+      </div>
+      <div style="padding: 24px 0;">
+        <p style="color: #555; font-size: 14px;">Hi {first_name},</p>
+        <p style="color: #555; font-size: 14px;">Here's a summary of your conversation with Laura.</p>
+        <div style="background: #f9f9f9; border-radius: 12px; padding: 24px; margin: 24px 0; font-size: 14px; line-height: 1.7; color: #333;">
+          {html_summary}
+        </div>
+        <p style="color: #888; font-size: 12px;">Return to the portal to continue the conversation or start a new one.</p>
+      </div>
+      <div style="border-top: 1px solid #e5e5e5; padding: 16px 0; font-size: 11px; color: #aaa; text-align: center;">
+        Merantix Capital LP Portal · Confidential · For Limited Partners only
+      </div>
+    </div>
+    """
+
+    try:
+        import resend as resend_client
+        resend_client.api_key = resend_key
+        resend_client.Emails.send({
+            "from": email_from,
+            "to": current_user.email,
+            "subject": f"Your Merantix LP session summary",
+            "html": html_body,
+        })
+    except Exception as exc:
+        log.error("Email send failed: %s", exc)
+        raise HTTPException(503, "Failed to send email")
+
+    return {"ok": True, "email": current_user.email}

@@ -16,3 +16,4 @@ python-pptx>=0.6.23
 # Optional — only needed to read PRIVATE Google Drive/Docs via a service account.
 # Public/published links work without it.
 google-auth>=2.0.0
+resend>=2.0.0
