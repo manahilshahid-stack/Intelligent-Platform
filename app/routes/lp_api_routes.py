@@ -27,7 +27,7 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -607,6 +607,7 @@ def api_get_chat_session(
         "id": str(session.id),
         "messages": [
             {
+                "id": m.id,
                 "role": m.role,
                 "content": m.content,
                 "ts": int(m.created_at.timestamp() * 1000) if m.created_at else 0,
@@ -643,7 +644,6 @@ def api_delete_chat_session(
 @router.post("/chat/stream")
 async def api_chat_stream(
     body: ChatRequest,
-    background_tasks: BackgroundTasks,
     current_user: LPUser = Depends(_get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -765,28 +765,6 @@ async def api_chat_stream(
     previous_msgs = list(session.messages)
     collected: list[str] = []
 
-    saved_message_id: list[int] = []
-
-    def _save_reply():
-        from ..database import SessionLocal
-        bg = SessionLocal()
-        try:
-            full = "".join(collected)
-            full = strip_invalid_citations(full, len(citations))
-            msg = LPChatMessage(session_id=int(session_id_str), role="assistant",
-                                content=full,
-                                citations_json=json.dumps(citations) if citations else None)
-            bg.add(msg)
-            bg.commit()
-            bg.refresh(msg)
-            saved_message_id.append(msg.id)
-        except Exception as exc:
-            log.error("Stream save reply failed: %s", exc)
-        finally:
-            bg.close()
-
-    background_tasks.add_task(_save_reply)
-
     async def _stream():
         # Send session + status immediately so the UI shows activity right away
         yield f"data: {json.dumps({'type': 'session', 'session_id': session_id_str})}\n\n"
@@ -804,7 +782,30 @@ async def api_chat_stream(
             err = " [Stream interrupted. Please try again.]"
             collected.append(err)
             yield f"data: {json.dumps({'type': 'token', 'text': err})}\n\n"
-        yield f"data: {json.dumps({'type': 'done', 'message_id': saved_message_id[0] if saved_message_id else None})}\n\n"
+
+        # Save INSIDE the generator so message_id is available before done fires
+        saved_id = None
+        try:
+            from ..database import SessionLocal
+            bg = SessionLocal()
+            try:
+                full = "".join(collected)
+                full = strip_invalid_citations(full, len(citations))
+                msg = LPChatMessage(session_id=int(session_id_str), role="assistant",
+                                    content=full,
+                                    citations_json=json.dumps(citations) if citations else None)
+                bg.add(msg)
+                bg.commit()
+                bg.refresh(msg)
+                saved_id = msg.id
+            except Exception as exc:
+                log.error("Stream save reply failed: %s", exc)
+            finally:
+                bg.close()
+        except Exception as exc:
+            log.error("Stream save outer error: %s", exc)
+
+        yield f"data: {json.dumps({'type': 'done', 'message_id': saved_id})}\n\n"
 
     return StreamingResponse(
         _stream(),

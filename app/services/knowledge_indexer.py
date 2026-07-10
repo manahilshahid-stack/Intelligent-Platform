@@ -321,6 +321,88 @@ def build_crm_venture_text(venture) -> str:
     return "\n".join(lines)
 
 
+
+
+def build_crm_venture_chunks(venture) -> list[tuple[str, str]]:
+    """
+    Split a CRM venture into 3 focused text chunks for more precise retrieval.
+    Returns list of (chunk_label, text) tuples.
+
+    Chunk A — Overview:  what the company does (drives "what does X do?" queries)
+    Chunk B — Market:    sector, industry, themes (drives sector/market queries)
+    Chunk C — Profile:   founding info, team size, location (drives factual queries)
+    """
+    raw_blobs = [venture.raw_entry_json, venture.raw_record_json, venture.raw_attio_json]
+
+    def _field(*slugs):
+        from .knowledge_indexer import extract_attio_field, normalize_attio_value
+        for slug in slugs:
+            for blob in raw_blobs:
+                v = extract_attio_field(blob, slug)
+                if v is not None:
+                    nv = normalize_attio_value(v)
+                    if nv:
+                        return nv
+        return None
+
+    def _norm(val):
+        from .knowledge_indexer import normalize_attio_value
+        v = normalize_attio_value(val)
+        return v or ""
+
+    name = _field("name", "company_name") or venture.name or ""
+    prefix = f"Company: {name}"
+
+    chunks: list[tuple[str, str]] = []
+
+    # ── Chunk A: Overview ─────────────────────────────────────────────────
+    lines_a: list[str] = [prefix]
+    website = _field("domains", "website", "domain", "url") or venture.website
+    desc = _field("description", "about", "bio") or venture.description
+    cats = _field("categories", "category")
+    ai = _field("ai_checkbox", "is_ai")
+    linkedin = _field("linkedin", "linkedin_url")
+    if website:   lines_a.append(f"Website: {website}")
+    if desc:      lines_a.append(f"Description: {desc}")
+    if cats:      lines_a.append(f"Categories: {cats}")
+    if ai:        lines_a.append(f"AI company: {ai}")
+    if linkedin:  lines_a.append(f"LinkedIn: {linkedin}")
+    if len(lines_a) > 1:
+        chunks.append(("overview", "\n".join(lines_a)))
+
+    # ── Chunk B: Market & sector ──────────────────────────────────────────
+    lines_b: list[str] = [prefix]
+    sector = _field("investment_industry", "industry", "sector") or venture.sector
+    sectors = _field("sectors", "multi_sectors")
+    stage = _field("investment_stage", "stage", "deal_stage") or venture.stage
+    if sector:   lines_b.append(f"Sector: {sector}")
+    if sectors:  lines_b.append(f"Sectors: {sectors}")
+    if stage:    lines_b.append(f"Stage: {stage}")
+    if len(lines_b) > 1:
+        chunks.append(("market", "\n".join(lines_b)))
+
+    # ── Chunk C: Company profile ──────────────────────────────────────────
+    lines_c: list[str] = [prefix]
+    founded = _field("foundation_date", "founded", "founding_date")
+    employees = _field("employee_range", "headcount", "employees", "team_size")
+    location = _field("primary_location", "location", "city", "country")
+    history = _field("history", "notes", "note")
+    if founded:   lines_c.append(f"Founded: {founded}")
+    if employees: lines_c.append(f"Employees: {employees}")
+    if location:  lines_c.append(f"Location: {location}")
+    if history:   lines_c.append(f"History: {history}")
+    if len(lines_c) > 1:
+        chunks.append(("profile", "\n".join(lines_c)))
+
+    # Fall back to single chunk if nothing split
+    if not chunks:
+        from .knowledge_indexer import build_crm_venture_text
+        fallback = build_crm_venture_text(venture)
+        if fallback.strip():
+            chunks.append(("full", fallback))
+
+    return chunks
+
 # ---------------------------------------------------------------------------
 # Theme inference
 # ---------------------------------------------------------------------------
@@ -357,12 +439,13 @@ def infer_basic_themes(text: str, sector: str | None) -> list[str]:
 
 def index_crm_venture(crm_venture_id: int, db: Session) -> int:
     """
-    Embed and store knowledge chunks for one CRM venture.
+    Embed and store focused knowledge chunks for one CRM venture.
+    Creates up to 3 chunks (overview, market, profile) for precise retrieval.
     Deletes any existing chunks/source for this venture first (re-index).
-    Returns the number of chunks created (0 or 1).
+    Returns the number of chunks created.
     """
     from ..models import CrmVenture, KnowledgeChunk, KnowledgeSource
-    from .embeddings import embed_text
+    from .embeddings import embed_texts
     from .settings_service import get_openrouter_api_key
 
     venture = db.get(CrmVenture, crm_venture_id)
@@ -375,14 +458,13 @@ def index_crm_venture(crm_venture_id: int, db: Session) -> int:
         log.warning("index_crm_venture: OpenRouter API key not configured")
         return 0
 
-    # ── Build text ─────────────────────────────────────────────────────────
-    text_body = build_crm_venture_text(venture)
-    if not text_body.strip():
+    # ── Build focused chunks ───────────────────────────────────────────────
+    focused_chunks = build_crm_venture_chunks(venture)
+    if not focused_chunks:
         log.debug("index_crm_venture: venture %d has no text to index", crm_venture_id)
         return 0
 
     sector = venture.sector
-    themes = infer_basic_themes(text_body, sector)
 
     # ── Delete old source + chunks ─────────────────────────────────────────
     old_source = db.scalar(
@@ -395,12 +477,16 @@ def index_crm_venture(crm_venture_id: int, db: Session) -> int:
         db.delete(old_source)
         db.flush()
 
-    # ── Embed ──────────────────────────────────────────────────────────────
+    # ── Batch embed all chunks ─────────────────────────────────────────────
+    texts = [text for _, text in focused_chunks]
     try:
-        vec = embed_text(text_body, api_key)
-        embedding_json = json.dumps(vec)
+        vectors = embed_texts(texts, api_key)
     except Exception as exc:
         log.warning("index_crm_venture: embedding failed for venture %d: %s", crm_venture_id, exc)
+        return 0
+
+    if not vectors or len(vectors) != len(texts):
+        log.warning("index_crm_venture: embedding mismatch for venture %d", crm_venture_id)
         return 0
 
     # ── Persist ────────────────────────────────────────────────────────────
@@ -415,32 +501,36 @@ def index_crm_venture(crm_venture_id: int, db: Session) -> int:
     db.add(source)
     db.flush()
 
-    chunk = KnowledgeChunk(
-        knowledge_source_id=source.id,
-        crm_venture_id=crm_venture_id,
-        source_type="crm_venture",
-        source_id=crm_venture_id,
-        text=text_body,
-        embedding=embedding_json,
-        sector=sector,
-        themes_json=json.dumps(themes) if themes else None,
-        visibility="admin",
-        approved=True,
-    )
-    db.add(chunk)
+    created = 0
+    for (label, text_body), vec in zip(focused_chunks, vectors):
+        themes = infer_basic_themes(text_body, sector)
+        chunk = KnowledgeChunk(
+            knowledge_source_id=source.id,
+            crm_venture_id=crm_venture_id,
+            source_type="crm_venture",
+            source_id=crm_venture_id,
+            text=text_body,
+            embedding=json.dumps(vec),
+            sector=sector,
+            themes_json=json.dumps(themes) if themes else None,
+            visibility="admin",
+            approved=True,
+        )
+        db.add(chunk)
+        db.flush()
+        try:
+            from .vector_store import set_row_vector
+            set_row_vector(db, "knowledge_chunks", chunk.id, vec)
+        except Exception:
+            pass
+        created += 1
+
     db.commit()
-
-    try:
-        from .vector_store import set_row_vector
-        set_row_vector(db, "knowledge_chunks", chunk.id, vec)
-    except Exception as exc:
-        log.warning("index_crm_venture: pgvector sync skipped: %s", exc)
-
     log.debug(
-        "index_crm_venture: indexed venture %d (%s) with %d themes",
-        crm_venture_id, venture.name, len(themes),
+        "index_crm_venture: indexed venture %d (%s) with %d focused chunks",
+        crm_venture_id, venture.name, created,
     )
-    return 1
+    return created
 
 
 def index_all_crm_ventures(db: Session) -> dict:
