@@ -2,13 +2,15 @@
 <html lang="en" data-sidebar="open">
 <head>
   <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Portfolio Intelligence{% endblock %}</title>
+  <title>{% block title %}Merantix Capitalligence{% endblock %}</title>
   <style>
 /* ── Reset ─────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: #f5f5f4;
   color: #1a1a1a;
   min-height: 100vh;
@@ -22,7 +24,7 @@ a { color: inherit; text-decoration: none; }
 .sidebar {
   width: 228px;
   min-height: 100vh;
-  background: #18181b;
+  background: #D4F70E;
   color: #e4e4e7;
   display: flex;
   flex-direction: column;
@@ -48,10 +50,10 @@ a { color: inherit; text-decoration: none; }
 }
 .sidebar-logo .logo-mark {
   width: 30px; height: 30px; flex-shrink: 0;
-  background: #4f46e5;
+  background: #D4F70E;
   border-radius: 7px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 0.85rem; font-weight: 800; color: #fff; letter-spacing: -0.02em;
+  font-size: 0.85rem; font-weight: 800; color: #18181b; letter-spacing: -0.02em;
 }
 .sidebar-logo .logo-text {
   font-size: 0.9rem; font-weight: 700; color: #fff; letter-spacing: -0.01em;
@@ -98,7 +100,7 @@ a { color: inherit; text-decoration: none; }
   position: relative;
 }
 .nav-item:hover { background: #27272a; color: #fff; }
-.nav-item.active { background: #3f3f46; color: #fff; }
+.nav-item.active { background: #D4F70E; color: #18181b; }
 .nav-item .nav-icon {
   font-size: 1rem;
   flex-shrink: 0;
@@ -169,7 +171,7 @@ a { color: inherit; text-decoration: none; }
   transition: left 0.22s ease, color 0.12s, background 0.12s;
 }
 [data-sidebar="closed"] .sidebar-toggle { left: 42px; }
-.sidebar-toggle:hover { background: #3f3f46; color: #fff; }
+.sidebar-toggle:hover { background: #D4F70E; color: #18181b; }
 
 /* ── Main content ───────────────────────────────────────────────────────── */
 .main-wrap {
@@ -204,7 +206,7 @@ a { color: inherit; text-decoration: none; }
   min-width: 0;
 }
 .topbar-breadcrumb a { color: #9ca3af; transition: color 0.12s; }
-.topbar-breadcrumb a:hover { color: #4f46e5; }
+.topbar-breadcrumb a:hover { color: #18181b; }
 .topbar-breadcrumb .bc-sep { color: #d1d5db; font-size: 0.75rem; }
 .topbar-breadcrumb .bc-current { color: #1a1a1a; font-weight: 500; }
 .topbar-actions { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
@@ -274,8 +276,8 @@ input[type=text], input[type=email], input[type=password], input[type=number], s
   color: #1a1a1a;
 }
 input:focus, select:focus, textarea:focus {
-  border-color: #4f46e5;
-  box-shadow: 0 0 0 3px rgba(79,70,229,0.1);
+  border-color: #18181b;
+  box-shadow: 0 0 0 3px rgba(212,247,14,0.15);
 }
 textarea { resize: vertical; line-height: 1.55; }
 
@@ -291,8 +293,8 @@ textarea { resize: vertical; line-height: 1.55; }
   transition: background 0.12s, opacity 0.12s, box-shadow 0.12s;
   white-space: nowrap;
 }
-.btn-primary { background: #4f46e5; color: #fff; }
-.btn-primary:hover { background: #4338ca; }
+.btn-primary { background: #D4F70E; color: #fff; }
+.btn-primary:hover { background: #000000; }
 .btn-secondary { background: #f4f4f5; color: #374151; border: 1px solid #e4e4e7; }
 .btn-secondary:hover { background: #e4e4e7; }
 .btn-danger { background: #dc2626; color: #fff; }
@@ -415,8 +417,8 @@ textarea { resize: vertical; line-height: 1.55; }
   <aside class="sidebar" id="sidebar">
 
     <div class="sidebar-logo">
-      <div class="logo-mark">PI</div>
-      <span class="logo-text">Portfolio Intel</span>
+      <div class="logo-mark">M</div>
+      <span class="logo-text">Merantix Capital</span>
     </div>
 
     <nav class="sidebar-nav">
