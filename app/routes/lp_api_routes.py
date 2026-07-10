@@ -511,6 +511,7 @@ def api_chat(
                 citations = [
                     {
                         "index": i + 1,
+                        "chunk_id": c.chunk_id,
                         "company_name": c.company_name,
                         "document_title": c.document_title,
                         "excerpt": c.text[:200] + ("…" if len(c.text) > 200 else ""),
@@ -764,16 +765,21 @@ async def api_chat_stream(
     previous_msgs = list(session.messages)
     collected: list[str] = []
 
+    saved_message_id: list[int] = []
+
     def _save_reply():
         from ..database import SessionLocal
         bg = SessionLocal()
         try:
             full = "".join(collected)
             full = strip_invalid_citations(full, len(citations))
-            bg.add(LPChatMessage(session_id=int(session_id_str), role="assistant",
-                                 content=full,
-                                 citations_json=json.dumps(citations) if citations else None))
+            msg = LPChatMessage(session_id=int(session_id_str), role="assistant",
+                                content=full,
+                                citations_json=json.dumps(citations) if citations else None)
+            bg.add(msg)
             bg.commit()
+            bg.refresh(msg)
+            saved_message_id.append(msg.id)
         except Exception as exc:
             log.error("Stream save reply failed: %s", exc)
         finally:
@@ -798,7 +804,7 @@ async def api_chat_stream(
             err = " [Stream interrupted. Please try again.]"
             collected.append(err)
             yield f"data: {json.dumps({'type': 'token', 'text': err})}\n\n"
-        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'message_id': saved_message_id[0] if saved_message_id else None})}\n\n"
 
     return StreamingResponse(
         _stream(),
@@ -943,3 +949,76 @@ CONVERSATION:
         raise HTTPException(503, "Failed to send email")
 
     return {"ok": True, "email": current_user.email}
+
+
+# ── Feedback endpoint ─────────────────────────────────────────────────────────
+
+class FeedbackRequest(BaseModel):
+    rating: int  # 1 = thumbs up, -1 = thumbs down
+
+
+@router.post("/chat/messages/{message_id}/feedback")
+def api_message_feedback(
+    message_id: int,
+    body: FeedbackRequest,
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Store LP feedback on an AI message and update chunk usefulness scores."""
+    from ..models import LPChatSession, LPChatMessage, LPMessageFeedback, KnowledgeChunk
+
+    if body.rating not in (1, -1):
+        raise HTTPException(400, "Rating must be 1 or -1")
+
+    # Verify the message belongs to this user
+    message = db.scalar(
+        select(LPChatMessage)
+        .join(LPChatSession, LPChatMessage.session_id == LPChatSession.id)
+        .where(LPChatMessage.id == message_id)
+        .where(LPChatSession.lp_user_id == current_user.id)
+        .where(LPChatMessage.role == "assistant")
+    )
+    if not message:
+        raise HTTPException(404, "Message not found")
+
+    # Extract chunk IDs from citations
+    chunk_ids: list[int] = []
+    if message.citations_json:
+        try:
+            for c in json.loads(message.citations_json):
+                if c.get("chunk_id"):
+                    chunk_ids.append(int(c["chunk_id"]))
+        except Exception:
+            pass
+
+    # Upsert feedback (one rating per message per user)
+    existing = db.scalar(
+        select(LPMessageFeedback)
+        .where(LPMessageFeedback.lp_user_id == current_user.id)
+        .where(LPMessageFeedback.message_id == message_id)
+    )
+    if existing:
+        old_rating = existing.rating
+        existing.rating = body.rating
+        db.commit()
+        # Reverse old rating effect before applying new one
+        score_delta = (body.rating - old_rating) * 0.1
+    else:
+        db.add(LPMessageFeedback(
+            lp_user_id=current_user.id,
+            message_id=message_id,
+            rating=body.rating,
+            chunk_ids=json.dumps(chunk_ids) if chunk_ids else None,
+        ))
+        db.commit()
+        score_delta = body.rating * 0.1
+
+    # Update feedback_score on each chunk — clamped to [-5, +5]
+    if chunk_ids and score_delta != 0:
+        for cid in chunk_ids:
+            chunk = db.get(KnowledgeChunk, cid)
+            if chunk:
+                chunk.feedback_score = max(-5.0, min(5.0, chunk.feedback_score + score_delta))
+        db.commit()
+
+    return {"ok": True, "rated": body.rating}

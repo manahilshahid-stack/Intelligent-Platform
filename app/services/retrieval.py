@@ -1078,6 +1078,20 @@ def retrieve_for_chat(
         if focused:
             combined = focused
 
+    # Boost scores using LP feedback — chunks rated helpful surface higher over time
+    for r in combined:
+        fb = getattr(r, 'feedback_score', None)
+        if fb is None:
+            # Try to load from DB (only for knowledge chunks with an id)
+            try:
+                from ..models import KnowledgeChunk as _KC
+                chunk = db.get(_KC, r.chunk_id) if r.chunk_id else None
+                fb = chunk.feedback_score if chunk else 0.0
+            except Exception:
+                fb = 0.0
+        # Small additive boost: ±0.05 per feedback point (max ±0.25 at score=±5)
+        r.score = r.score + (fb * 0.05)
+
     combined.sort(key=lambda r: r.score, reverse=True)
     combined = combined[:pool]
 

@@ -378,4 +378,37 @@ def run_migrations(bind: Engine = engine) -> None:
     # 5. Optional pgvector acceleration (Postgres only, non-fatal)
     _ensure_pgvector(bind)
 
+    # 6. Feedback loop tables
+    _ensure_feedback(bind)
+
     log.info("Schema migrations complete.")
+
+
+def _ensure_feedback(bind) -> None:
+    """Add feedback_score to knowledge_chunks and create lp_message_feedback table."""
+    create_feedback_table = (
+        "CREATE TABLE IF NOT EXISTS lp_message_feedback ("
+        "id SERIAL PRIMARY KEY, "
+        "lp_user_id INTEGER NOT NULL REFERENCES lp_users(id) ON DELETE CASCADE, "
+        "message_id INTEGER NOT NULL REFERENCES lp_chat_messages(id) ON DELETE CASCADE, "
+        "rating INTEGER NOT NULL, "
+        "chunk_ids TEXT, "
+        "created_at TIMESTAMP NOT NULL DEFAULT NOW(), "
+        "CONSTRAINT uq_lp_feedback_per_message UNIQUE (lp_user_id, message_id)"
+        ")"
+    )
+    steps = [
+        "ALTER TABLE knowledge_chunks ADD COLUMN IF NOT EXISTS feedback_score FLOAT NOT NULL DEFAULT 0.0",
+        create_feedback_table,
+        "CREATE INDEX IF NOT EXISTS ix_lp_message_feedback_message_id ON lp_message_feedback(message_id)",
+        "CREATE INDEX IF NOT EXISTS ix_lp_message_feedback_lp_user_id ON lp_message_feedback(lp_user_id)",
+    ]
+    try:
+        with bind.begin() as conn:
+            for sql in steps:
+                try:
+                    conn.execute(text(sql))
+                except Exception as exc:
+                    log.warning("feedback migration step skipped: %s", exc)
+    except Exception as exc:
+        log.warning("feedback migration failed: %s", exc)

@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer,
+    Boolean, Date, DateTime, Enum, Float, ForeignKey, Index, Integer,
     LargeBinary, String, Text, UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -785,6 +785,7 @@ class KnowledgeChunk(Base):
     themes_json: Mapped[str | None] = mapped_column(Text, deferred=True)  # JSON list of theme strings
     visibility: Mapped[str] = mapped_column(String(20), nullable=False, default="admin")
     approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    feedback_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
     knowledge_source: Mapped[KnowledgeSource] = relationship(back_populates="chunks")
@@ -793,4 +794,25 @@ class KnowledgeChunk(Base):
         Index("ix_knowledge_chunks_knowledge_source_id", "knowledge_source_id"),
         Index("ix_knowledge_chunks_crm_venture_id", "crm_venture_id"),
         Index("ix_knowledge_chunks_approved", "approved"),
+    )
+
+class LPMessageFeedback(Base):
+    """LP thumbs up/down on a chat message — used to improve retrieval over time."""
+    __tablename__ = "lp_message_feedback"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lp_user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("lp_users.id", ondelete="CASCADE"), nullable=False
+    )
+    message_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("lp_chat_messages.id", ondelete="CASCADE"), nullable=False
+    )
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)  # 1 = thumbs up, -1 = thumbs down
+    chunk_ids: Mapped[str | None] = mapped_column(Text)  # JSON array of KnowledgeChunk IDs rated
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_lp_message_feedback_message_id", "message_id"),
+        Index("ix_lp_message_feedback_lp_user_id", "lp_user_id"),
+        UniqueConstraint("lp_user_id", "message_id", name="uq_lp_feedback_per_message"),
     )
