@@ -41,7 +41,8 @@ def _verify_signature(payload: bytes, header: str) -> bool:
     if not ATTIO_WEBHOOK_SECRET:
         log.warning("ATTIO_WEBHOOK_SECRET not set — skipping signature check (insecure)")
         return True
-    expected = "sha256=" + hmac.new(
+    # Attio sends a bare hex-encoded HMAC-SHA256 digest (no "sha256=" prefix)
+    expected = hmac.new(
         ATTIO_WEBHOOK_SECRET.encode(), payload, hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(expected, header or "")
@@ -135,7 +136,7 @@ async def attio_webhook(request: Request):
     for the affected record or note.
     """
     payload = await request.body()
-    signature = request.headers.get("x-attio-client-signature", "")
+    signature = request.headers.get("attio-signature", "")
 
     if not _verify_signature(payload, signature):
         log.warning("webhook: invalid signature — rejecting")
