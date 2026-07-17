@@ -131,7 +131,7 @@ def _send_otp_email(to_email: str, name: str, code: str) -> None:
     resend_client.api_key = resend_key
     resend_client.Emails.send({
         "from": email_from,
-        "to": to_email,
+        "to": [to_email],
         "subject": "Your Merantix LP Portal verification code",
         "html": html_body,
     })
@@ -1079,7 +1079,7 @@ CONVERSATION:
         resend_client.api_key = resend_key
         resend_client.Emails.send({
             "from": email_from,
-            "to": current_user.email,
+            "to": [current_user.email],
             "subject": f"Your Merantix LP session summary",
             "html": html_body,
         })
