@@ -188,6 +188,9 @@ class LPUser(Base):
     name: Mapped[str | None] = mapped_column(String(200))
     organization: Mapped[str | None] = mapped_column(String(200))
 
+    # Profile picture stored as base64 data URL
+    avatar: Mapped[str | None] = mapped_column(Text)
+
     # Email verification via OTP
     email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     otp_code: Mapped[str | None] = mapped_column(String(6))       # 6-digit code, short-lived

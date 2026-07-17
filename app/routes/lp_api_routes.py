@@ -196,7 +196,7 @@ def _user_to_dict(user: LPUser) -> dict:
         "looking_for": json.loads(user.looking_for) if user.looking_for else [],
         "about_yourself": user.about_yourself or "",
         "onboarding_completed": user.onboarding_completed,
-        "avatar": None,
+        "avatar": user.avatar,
     }
 
 
@@ -250,6 +250,7 @@ class UpdateProfileRequest(BaseModel):
     looking_for: list[str] | None = None
     about_yourself: str | None = None
     onboarding_completed: bool | None = None
+    avatar: str | None = None
 
 
 class VerifyOtpRequest(BaseModel):
@@ -410,6 +411,8 @@ def api_update_me(
         current_user.about_yourself = body.about_yourself or None
     if body.onboarding_completed is not None:
         current_user.onboarding_completed = body.onboarding_completed
+    if body.avatar is not None:
+        current_user.avatar = body.avatar or None
     db.commit()
     return _user_to_dict(current_user)
 

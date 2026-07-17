@@ -390,6 +390,7 @@ def run_migrations(bind: Engine = engine) -> None:
 def _ensure_otp_columns(bind) -> None:
     """Add OTP email-verification columns to lp_users (idempotent)."""
     steps = [
+        "ALTER TABLE lp_users ADD COLUMN IF NOT EXISTS avatar TEXT",
         "ALTER TABLE lp_users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE lp_users ADD COLUMN IF NOT EXISTS otp_code VARCHAR(6)",
         "ALTER TABLE lp_users ADD COLUMN IF NOT EXISTS otp_expires_at TIMESTAMP",
