@@ -91,11 +91,15 @@ def _generate_otp() -> str:
 
 
 def _send_otp_email(to_email: str, name: str, code: str) -> None:
-    """Send OTP verification email via Resend. Raises on failure."""
-    resend_key = os.environ.get("RESEND_API_KEY", "")
-    email_from = os.environ.get("EMAIL_FROM", "laura@summary.merantix.com")
-    if not resend_key:
-        raise RuntimeError("RESEND_API_KEY not configured")
+    """Send OTP verification email via Gmail SMTP. Raises on failure."""
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_pass = os.environ.get("SMTP_PASS", "")
+    if not smtp_user or not smtp_pass:
+        raise RuntimeError("SMTP_USER / SMTP_PASS not configured")
 
     first_name = (name or to_email).split()[0]
     html_body = f"""
@@ -127,14 +131,17 @@ def _send_otp_email(to_email: str, name: str, code: str) -> None:
       </div>
     </div>
     """
-    import resend as resend_client  # type: ignore
-    resend_client.api_key = resend_key
-    resend_client.Emails.send({
-        "from": email_from,
-        "to": [to_email],
-        "subject": "Your Merantix LP Portal verification code",
-        "html": html_body,
-    })
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Your Merantix LP Portal verification code"
+    msg["From"] = f"Merantix Capital <{smtp_user}>"
+    msg["To"] = to_email
+    msg.attach(MIMEText(html_body, "html"))
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(smtp_user, smtp_pass)
+        server.sendmail(smtp_user, to_email, msg.as_string())
+        log.info("OTP email sent to %s via Gmail SMTP", to_email)
 
 _COLORS = [
     "oklch(0.92 0.25 120)",
