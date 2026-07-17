@@ -181,19 +181,24 @@ class UserSession(Base):
 class LPUser(Base):
     """Limited Partner user account with onboarding preferences."""
     __tablename__ = "lp_users"
- 
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(254), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(256), nullable=False)
     name: Mapped[str | None] = mapped_column(String(200))
     organization: Mapped[str | None] = mapped_column(String(200))
-    
+
+    # Email verification via OTP
+    email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    otp_code: Mapped[str | None] = mapped_column(String(6))       # 6-digit code, short-lived
+    otp_expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+
     # Onboarding fields (can be NULL = skipped or not yet completed)
     interest_areas: Mapped[str | None] = mapped_column(Text)  # JSON array of LPInterestArea values
     looking_for: Mapped[str | None] = mapped_column(Text)     # JSON array of LPLookingFor values
     about_yourself: Mapped[str | None] = mapped_column(Text)  # Free text
     onboarding_completed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
  

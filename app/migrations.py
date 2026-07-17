@@ -381,7 +381,30 @@ def run_migrations(bind: Engine = engine) -> None:
     # 6. Feedback loop tables
     _ensure_feedback(bind)
 
+    # 7. OTP email-verification columns
+    _ensure_otp_columns(bind)
+
     log.info("Schema migrations complete.")
+
+
+def _ensure_otp_columns(bind) -> None:
+    """Add OTP email-verification columns to lp_users (idempotent)."""
+    steps = [
+        "ALTER TABLE lp_users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE lp_users ADD COLUMN IF NOT EXISTS otp_code VARCHAR(6)",
+        "ALTER TABLE lp_users ADD COLUMN IF NOT EXISTS otp_expires_at TIMESTAMP",
+    ]
+    try:
+        with bind.begin() as conn:
+            if not _is_postgres(conn):
+                return  # SQLite: create_all already applies the full schema
+            for sql in steps:
+                try:
+                    conn.execute(text(sql))
+                except Exception as exc:
+                    log.warning("OTP migration step skipped: %s", exc)
+    except Exception as exc:
+        log.warning("OTP migration failed: %s", exc)
 
 
 def _ensure_feedback(bind) -> None:

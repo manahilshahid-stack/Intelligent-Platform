@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import random
 import re
 import secrets
 from datetime import datetime, timedelta
@@ -77,6 +79,62 @@ def _build_alias_context() -> str:
         lines.append(f"- {current.title()} was formerly known as: {', '.join(n.title() for n in old_names)}")
     return "\n".join(lines)
 router = APIRouter(prefix="/api/lp")
+
+# ── OTP helpers ───────────────────────────────────────────────────────────────
+
+_OTP_TTL_MINUTES = 15
+
+
+def _generate_otp() -> str:
+    """Return a 6-digit string OTP."""
+    return f"{random.SystemRandom().randint(0, 999999):06d}"
+
+
+def _send_otp_email(to_email: str, name: str, code: str) -> None:
+    """Send OTP verification email via Resend. Raises on failure."""
+    resend_key = os.environ.get("RESEND_API_KEY", "")
+    email_from = os.environ.get("EMAIL_FROM", "laura@summary.merantix.com")
+    if not resend_key:
+        raise RuntimeError("RESEND_API_KEY not configured")
+
+    first_name = (name or to_email).split()[0]
+    html_body = f"""
+    <div style="font-family:'Inter',Arial,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a;">
+      <div style="padding:32px 0 16px;border-bottom:1px solid #e5e5e5;">
+        <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:0.2em;color:#888;">
+          Merantix Capital · LP Portal
+        </p>
+        <h1 style="margin:8px 0 0;font-size:22px;font-weight:700;">Verify your email</h1>
+      </div>
+      <div style="padding:24px 0;">
+        <p style="color:#555;font-size:14px;">Hi {first_name},</p>
+        <p style="color:#555;font-size:14px;">
+          Enter this code in the portal to verify your email address.
+          The code expires in {_OTP_TTL_MINUTES} minutes.
+        </p>
+        <div style="margin:32px 0;text-align:center;">
+          <span style="display:inline-block;background:#f4f4f4;border-radius:12px;padding:20px 40px;
+                       font-size:36px;font-weight:700;letter-spacing:0.35em;color:#1a1a1a;">
+            {code}
+          </span>
+        </div>
+        <p style="color:#aaa;font-size:12px;">
+          If you didn't create an account, you can safely ignore this email.
+        </p>
+      </div>
+      <div style="border-top:1px solid #e5e5e5;padding:16px 0;font-size:11px;color:#aaa;text-align:center;">
+        Merantix Capital LP Portal · Confidential · For Limited Partners only
+      </div>
+    </div>
+    """
+    import resend as resend_client  # type: ignore
+    resend_client.api_key = resend_key
+    resend_client.Emails.send({
+        "from": email_from,
+        "to": to_email,
+        "subject": "Your Merantix LP Portal verification code",
+        "html": html_body,
+    })
 
 _COLORS = [
     "oklch(0.92 0.25 120)",
@@ -187,6 +245,15 @@ class UpdateProfileRequest(BaseModel):
     onboarding_completed: bool | None = None
 
 
+class VerifyOtpRequest(BaseModel):
+    email: str
+    code: str
+
+
+class ResendOtpRequest(BaseModel):
+    email: str
+
+
 class ChatRequest(BaseModel):
     message: str
     session_id: str | int | None = None
@@ -211,18 +278,28 @@ def api_register(body: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(400, "An account with this email already exists")
 
     name = f"{first} {last}".strip()
+    code = _generate_otp()
     user = LPUser(
         name=name,
         email=email,
         organization=body.company.strip() or None,
         password_hash=hash_password(password),
         onboarding_completed=False,
+        email_verified=False,
+        otp_code=code,
+        otp_expires_at=datetime.utcnow() + timedelta(minutes=_OTP_TTL_MINUTES),
     )
     db.add(user)
     db.commit()
 
-    token = _create_token(user, db)
-    return {"ok": True, "token": token, "user": _user_to_dict(user)}
+    try:
+        _send_otp_email(email, name, code)
+    except Exception as exc:
+        log.error("OTP email send failed for %s: %s", email, exc)
+        # Don't block registration if email fails — user can resend
+        pass
+
+    return {"ok": True, "requires_verification": True, "email": email}
 
 
 @router.post("/login")
@@ -233,8 +310,69 @@ def api_login(body: LoginRequest, db: Session = Depends(get_db)):
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(401, "Invalid email or password")
 
+    if not user.email_verified:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "email_not_verified", "email": email},
+        )
+
     token = _create_token(user, db)
     return {"ok": True, "token": token, "user": _user_to_dict(user)}
+
+
+@router.post("/verify-otp")
+def api_verify_otp(body: VerifyOtpRequest, db: Session = Depends(get_db)):
+    """Verify the 6-digit OTP sent to the user's email and return a bearer token."""
+    email = body.email.strip().lower()
+    code = body.code.strip()
+
+    user = db.scalar(select(LPUser).where(LPUser.email == email))
+    if not user:
+        raise HTTPException(404, "No account found with that email")
+
+    if user.email_verified:
+        # Already verified — just issue a token (idempotent)
+        token = _create_token(user, db)
+        return {"ok": True, "token": token, "user": _user_to_dict(user)}
+
+    if not user.otp_code or user.otp_code != code:
+        raise HTTPException(400, "Invalid verification code")
+
+    if not user.otp_expires_at or user.otp_expires_at < datetime.utcnow():
+        raise HTTPException(400, "Verification code has expired — request a new one")
+
+    # Mark verified and clear OTP
+    user.email_verified = True
+    user.otp_code = None
+    user.otp_expires_at = None
+    db.commit()
+
+    token = _create_token(user, db)
+    return {"ok": True, "token": token, "user": _user_to_dict(user)}
+
+
+@router.post("/resend-otp")
+def api_resend_otp(body: ResendOtpRequest, db: Session = Depends(get_db)):
+    """Generate and resend a fresh OTP to the given email."""
+    email = body.email.strip().lower()
+    user = db.scalar(select(LPUser).where(LPUser.email == email))
+
+    # Always return 200 — don't leak whether the account exists
+    if not user or user.email_verified:
+        return {"ok": True}
+
+    code = _generate_otp()
+    user.otp_code = code
+    user.otp_expires_at = datetime.utcnow() + timedelta(minutes=_OTP_TTL_MINUTES)
+    db.commit()
+
+    try:
+        _send_otp_email(email, user.name or email, code)
+    except Exception as exc:
+        log.error("Resend OTP failed for %s: %s", email, exc)
+        raise HTTPException(503, "Failed to send email — please try again shortly")
+
+    return {"ok": True}
 
 
 @router.get("/me")
