@@ -90,8 +90,8 @@ def _generate_otp() -> str:
     return f"{random.SystemRandom().randint(0, 999999):06d}"
 
 
-def _send_otp_email(to_email: str, name: str, code: str) -> None:
-    """Send OTP verification email via Gmail SMTP. Raises on failure."""
+def _send_otp_email(to_email: str, name: str, code: str, subject: str | None = None) -> None:
+    """Send email via Gmail SMTP. Used for OTP verification and session summaries."""
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
@@ -132,8 +132,43 @@ def _send_otp_email(to_email: str, name: str, code: str) -> None:
     </div>
     """
 
+    # If `code` looks like a pre-built HTML body (summary email), use it directly
+    if code.strip().startswith("<"):
+        html_body = code
+    # Otherwise build the OTP email template
+    else:
+        html_body = f"""
+    <div style="font-family:'Inter',Arial,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a;">
+      <div style="padding:32px 0 16px;border-bottom:1px solid #e5e5e5;">
+        <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:0.2em;color:#888;">
+          Merantix Capital · LP Portal
+        </p>
+        <h1 style="margin:8px 0 0;font-size:22px;font-weight:700;">Verify your email</h1>
+      </div>
+      <div style="padding:24px 0;">
+        <p style="color:#555;font-size:14px;">Hi {first_name},</p>
+        <p style="color:#555;font-size:14px;">
+          Enter this code in the portal to verify your email address.
+          The code expires in {_OTP_TTL_MINUTES} minutes.
+        </p>
+        <div style="margin:32px 0;text-align:center;">
+          <span style="display:inline-block;background:#f4f4f4;border-radius:12px;padding:20px 40px;
+                       font-size:36px;font-weight:700;letter-spacing:0.35em;color:#1a1a1a;">
+            {code}
+          </span>
+        </div>
+        <p style="color:#aaa;font-size:12px;">
+          If you didn't create an account, you can safely ignore this email.
+        </p>
+      </div>
+      <div style="border-top:1px solid #e5e5e5;padding:16px 0;font-size:11px;color:#aaa;text-align:center;">
+        Merantix Capital LP Portal · Confidential · For Limited Partners only
+      </div>
+    </div>
+    """
+
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Your Merantix LP Portal verification code"
+    msg["Subject"] = subject or "Your Merantix LP Portal verification code"
     msg["From"] = f"Merantix Capital <{smtp_user}>"
     msg["To"] = to_email
     msg.attach(MIMEText(html_body, "html"))
@@ -141,7 +176,7 @@ def _send_otp_email(to_email: str, name: str, code: str) -> None:
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(smtp_user, smtp_pass)
         server.sendmail(smtp_user, to_email, msg.as_string())
-        log.info("OTP email sent to %s via Gmail SMTP", to_email)
+        log.info("Email sent to %s via Gmail SMTP", to_email)
 
 _COLORS = [
     "oklch(0.92 0.25 120)",
@@ -1049,18 +1084,10 @@ CONVERSATION:
         log.error("Summary generation failed: %s", exc)
         raise HTTPException(503, "Failed to generate summary")
 
-    # Send email via Resend
-    resend_key = os.environ.get("RESEND_API_KEY", "")
-    email_from = os.environ.get("EMAIL_FROM", "laura@summary.merantix.com")
-
-    if not resend_key:
-        raise HTTPException(503, "Email service not configured")
-
+    # Send email via Gmail SMTP (same as OTP)
     name = current_user.name or current_user.email
     first_name = name.split()[0] if name else "there"
 
-    # Convert markdown bold to HTML
-    import re
     html_summary = summary_text.replace("\n", "<br>")
     html_summary = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', html_summary)
 
@@ -1085,16 +1112,9 @@ CONVERSATION:
     """
 
     try:
-        import resend as resend_client
-        resend_client.api_key = resend_key
-        resend_client.Emails.send({
-            "from": email_from,
-            "to": [current_user.email],
-            "subject": f"Your Merantix LP session summary",
-            "html": html_body,
-        })
+        _send_otp_email(current_user.email, name, html_body, subject="Your Merantix LP session summary")
     except Exception as exc:
-        log.error("Email send failed: %s", exc)
+        log.error("Summary email send failed: %s", exc)
         raise HTTPException(503, "Failed to send email")
 
     return {"ok": True, "email": current_user.email}
