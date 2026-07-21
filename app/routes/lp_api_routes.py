@@ -78,6 +78,91 @@ def _build_alias_context() -> str:
     for current, old_names in COMPANY_ALIASES.items():
         lines.append(f"- {current.title()} was formerly known as: {', '.join(n.title() for n in old_names)}")
     return "\n".join(lines)
+def _fetch_live_company_context(company_name: str, db: Session) -> str:
+    """
+    Fetch live content from the company's website and recent web search.
+    Returns a formatted string to inject as context, or "" on failure.
+    """
+    import httpx
+    from html.parser import HTMLParser
+    from ..models import CrmVenture
+
+    class _TextExtractor(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self._skip = False
+            self.parts: list[str] = []
+        def handle_starttag(self, tag, attrs):
+            if tag in ("script", "style", "nav", "footer", "head", "noscript"):
+                self._skip = True
+        def handle_endtag(self, tag):
+            if tag in ("script", "style", "nav", "footer", "head", "noscript"):
+                self._skip = False
+        def handle_data(self, data):
+            if not self._skip:
+                stripped = data.strip()
+                if len(stripped) > 3:
+                    self.parts.append(stripped)
+
+    def _html_to_text(html: str, max_chars: int = 3000) -> str:
+        extractor = _TextExtractor()
+        try:
+            extractor.feed(html)
+        except Exception:
+            pass
+        text = " ".join(extractor.parts)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text[:max_chars]
+
+    # Look up website from DB (try exact name match + aliases)
+    aliases = COMPANY_ALIASES.get(company_name.lower(), [])
+    name_variants = [company_name] + [a.title() for a in aliases]
+    venture = None
+    for variant in name_variants:
+        venture = db.scalar(
+            select(CrmVenture)
+            .where(func.lower(CrmVenture.name) == variant.lower())
+            .where(CrmVenture.website.is_not(None))
+        )
+        if venture:
+            break
+
+    results: list[str] = []
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; Merantix-LP-Bot/1.0)"}
+
+    # 1. Fetch company website homepage
+    if venture and venture.website and venture.website not in ("tbd", "n/a", ""):
+        raw = venture.website.strip()
+        url = raw if raw.startswith("http") else f"https://{raw}"
+        try:
+            with httpx.Client(timeout=8, follow_redirects=True, headers=headers) as client:
+                r = client.get(url)
+                if r.status_code == 200:
+                    text = _html_to_text(r.text, max_chars=3000)
+                    if text:
+                        results.append(
+                            f"=== {company_name} WEBSITE (live, fetched now) ===\n{text}"
+                        )
+        except Exception as exc:
+            log.debug("Live website fetch failed for %s: %s", company_name, exc)
+
+    # 2. DuckDuckGo Lite search for recent news (no API key required)
+    try:
+        q = f"{company_name} startup AI 2025 2026 funding product"
+        with httpx.Client(timeout=8, follow_redirects=True, headers=headers) as client:
+            r = client.get("https://html.duckduckgo.com/html/", params={"q": q})
+            if r.status_code == 200:
+                text = _html_to_text(r.text, max_chars=2500)
+                if text:
+                    results.append(
+                        f"=== {company_name} RECENT WEB RESULTS (live search) ===\n{text}"
+                    )
+    except Exception as exc:
+        log.debug("Live search failed for %s: %s", company_name, exc)
+
+    return "\n\n".join(results)
+
+
 router = APIRouter(prefix="/api/lp")
 
 # ── OTP helpers ───────────────────────────────────────────────────────────────
@@ -919,7 +1004,16 @@ async def api_chat_stream(
         log.error("Streaming retrieval error: %s", exc, exc_info=True)
         chunks = []
 
-    if not chunks:
+    # Fetch live web context when on a company detail page
+    live_context = ""
+    if body.company_name:
+        try:
+            live_context = _fetch_live_company_context(body.company_name, db)
+        except Exception as exc:
+            log.debug("Live context fetch error: %s", exc)
+
+    # Only use hard fallback for general chat with no chunks AND no company focus
+    if not chunks and not live_context and not body.company_name:
         fallback = "I could not find relevant portfolio data for this question. Please try asking about specific companies or investment themes."
         db.add(LPChatMessage(session_id=session.id, role="assistant", content=fallback))
         db.commit()
@@ -932,17 +1026,31 @@ async def api_chat_stream(
         return StreamingResponse(_fallback_stream(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-    context = build_context(chunks)
+    context = build_context(chunks) if chunks else ""
     alias_note = _build_alias_context()
     if alias_note:
-        context = alias_note + "\n\n" + context
+        context = alias_note + "\n\n" + context if context else alias_note
     score_context = detect_and_score(message, focus_company, db)
     if score_context:
-        context = score_context + "\n\n" + context
+        context = score_context + "\n\n" + context if context else score_context
+
+    # Inject live web data
+    if live_context:
+        context = live_context + ("\n\n" + context if context else "")
+
+    # Company focus mode — strict scoping + name correction
     if body.company_name:
-        context = (f"IMPORTANT: The company being discussed is currently named '{body.company_name}'. "
-                   f"Any references to previous names refer to the same company — always use "
-                   f"'{body.company_name}' as the name in your response.\n\n" + context)
+        focus_header = (
+            f"COMPANY FOCUS MODE — STRICTLY ABOUT '{body.company_name}' ONLY.\n"
+            f"You must ONLY discuss '{body.company_name}'. Do not mention, compare, or reference "
+            f"any other company unless the user explicitly requests a comparison. "
+            f"If asked something unrelated to '{body.company_name}', politely redirect: "
+            f"'This chat is focused on {body.company_name} — use the main AI Analyst for broader questions.'\n"
+            f"Any references to former names in the documents below are the same company — "
+            f"always refer to it as '{body.company_name}'.\n"
+            f"Use the LIVE WEB DATA above to provide up-to-date information about this company.\n"
+        )
+        context = focus_header + "\n" + context if context else focus_header
 
     session_id_str = str(session.id)
     previous_msgs = list(session.messages)
@@ -951,7 +1059,8 @@ async def api_chat_stream(
     async def _stream():
         # Send session + status immediately so the UI shows activity right away
         yield f"data: {json.dumps({'type': 'session', 'session_id': session_id_str})}\n\n"
-        yield f"data: {json.dumps({'type': 'status', 'text': 'Laura is preparing your answer…'})}\n\n"
+        status_msg = f"Fetching live data on {body.company_name}…" if body.company_name else "Laura is preparing your answer…"
+        yield f"data: {json.dumps({'type': 'status', 'text': status_msg})}\n\n"
         try:
             async for token in call_chat_stream(
                 message, context, api_key,
