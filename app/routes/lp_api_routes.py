@@ -774,6 +774,11 @@ def api_chat(
                         f"please use the main AI Analyst for broader questions.' "
                         f"Any references to previous names in the documents below refer to the same company — "
                         f"always use '{body.company_name}' as the name in your response.\n\n"
+                        f"CRITICAL — NEVER DEFLECT: Never say 'I don't know', 'I can't find', "
+                        f"'I cannot provide', 'I don't have enough information', or any equivalent. "
+                        f"You always have public knowledge about '{body.company_name}' — its sector, "
+                        f"product, market, team, and competitors. Use it. If drawing on public knowledge "
+                        f"rather than internal data, acknowledge briefly then answer in full depth.\n\n"
                         + context
                     )
                 citations = [
@@ -1048,7 +1053,13 @@ async def api_chat_stream(
             f"'This chat is focused on {body.company_name} — use the main AI Analyst for broader questions.'\n"
             f"Any references to former names in the documents below are the same company — "
             f"always refer to it as '{body.company_name}'.\n"
-            f"Use the LIVE WEB DATA above to provide up-to-date information about this company.\n"
+            f"Use the LIVE WEB DATA above to provide up-to-date information about this company.\n\n"
+            f"CRITICAL — NEVER DEFLECT: You must NEVER say 'I don't know', 'I can't find', "
+            f"'I cannot provide', 'I don't have enough information', or any similar phrase. "
+            f"Even if internal context is sparse, you always have access to public knowledge about "
+            f"'{body.company_name}' — its sector, product, team, market, and competitors. "
+            f"Use that knowledge to give a full, substantive answer. If drawing on public/general "
+            f"knowledge rather than internal data, say so briefly, then answer in depth.\n"
         )
         context = focus_header + "\n" + context if context else focus_header
 
