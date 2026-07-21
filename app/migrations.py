@@ -400,7 +400,8 @@ def _ensure_portfolio_sectors(bind) -> None:
         ("Arqh",                    "Logistics",          "Pre-Seed"),
         ("CULTZYME",                "Techbio",            "Pre-Seed"),
         ("Company Shield",          "Cybersecurity",      "Seed"),
-        ("Deltia",                  "Manufacturing",      "Series A"),
+        ("Almetra",                 "Manufacturing",      "Series A"),
+        ("Deltia",                  "Manufacturing",      "Series A"),  # old name → renamed below
         ("Droidrun",                "Mobile AI",          "Pre-Seed"),
         ("Libra (Legal Services)",  "Legal Tech",         "Acquired"),
         ("Mage Metrics",            "Enterprise Software","Seed"),
@@ -411,6 +412,17 @@ def _ensure_portfolio_sectors(bind) -> None:
         ("Vara",                    "Healthcare",         "Series A"),
         ("hoshii.ai",               "Data Management",    "Pre-Seed"),
         ("vveave",                  "Fashion Tech",       "Pre-Seed"),
+        # Additional portfolio companies
+        ("Why Brilliant",           "Recruitment",        "Pre-Seed"),
+        ("WhyBrilliant",            "Recruitment",        "Pre-Seed"),
+        ("Whistle Robotics",        "Robotics",           "Pre-Seed"),
+        ("GraphTX",                 "Techbio",            "Seed"),
+        ("Graph Therapeutics",      "Techbio",            "Seed"),
+        ("Ficus Health",            "Healthcare",         "Seed"),
+        ("briink",                  "Fintech",            "Seed"),
+        ("Briink",                  "Fintech",            "Seed"),
+        ("cambrium",                "Biotech",            "Seed"),
+        ("Cambrium",                "Biotech",            "Seed"),
     ]
     try:
         with bind.begin() as conn:
@@ -423,6 +435,13 @@ def _ensure_portfolio_sectors(bind) -> None:
                 ))
             except Exception as exc:
                 log.warning("funding_stage column migration skipped: %s", exc)
+            # Rename Deltia → Almetra (company rebranded)
+            try:
+                conn.execute(text(
+                    "UPDATE crm_ventures SET name = 'Almetra' WHERE name = 'Deltia'"
+                ))
+            except Exception as exc:
+                log.warning("Deltia→Almetra rename skipped: %s", exc)
             # Backfill sector + funding_stage for known companies
             for name, sector, fs in PORTFOLIO_DATA:
                 try:
