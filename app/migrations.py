@@ -396,31 +396,69 @@ def _ensure_portfolio_sectors(bind) -> None:
     for known Merantix Capital portfolio companies. Idempotent.
     """
     # Known portfolio company data: (name_in_db, sector, funding_stage)
+    # Each company may appear under multiple name variants in Attio — list all.
     PORTFOLIO_DATA = [
+        # Arqh
         ("Arqh",                    "Logistics",          "Pre-Seed"),
+        # CULTZYME
         ("CULTZYME",                "Techbio",            "Pre-Seed"),
+        ("Cultzyme",                "Techbio",            "Pre-Seed"),
+        # revel8 (formerly Company Shield)
+        ("revel8",                  "Cybersecurity",      "Seed"),
+        ("Revel8",                  "Cybersecurity",      "Seed"),
         ("Company Shield",          "Cybersecurity",      "Seed"),
+        # Almetra (formerly Deltia)
         ("Almetra",                 "Manufacturing",      "Series A"),
-        ("Deltia",                  "Manufacturing",      "Series A"),  # old name → renamed below
+        ("Deltia",                  "Manufacturing",      "Series A"),
+        # Droidrun
         ("Droidrun",                "Mobile AI",          "Pre-Seed"),
+        # Libra
+        ("Libra",                   "Legal Tech",         "Acquired"),
         ("Libra (Legal Services)",  "Legal Tech",         "Acquired"),
+        ("libratech",               "Legal Tech",         "Acquired"),
+        ("Libratech",               "Legal Tech",         "Acquired"),
+        # Mage Metrics / Magemetrics
         ("Mage Metrics",            "Enterprise Software","Seed"),
+        ("MageMetrics",             "Enterprise Software","Seed"),
+        ("Magemetrics",             "Enterprise Software","Seed"),
+        # Meteoric (formerly Meteoric Energy / Zeus Energy)
+        ("Meteoric",                "Energy",             "Pre-Seed"),
         ("Meteoric Energy",         "Energy",             "Pre-Seed"),
+        ("Zeus Energy",             "Energy",             "Pre-Seed"),
+        # Molecular Glue Labs
         ("Molecular Glue Labs",     "Techbio",            "Seed"),
+        # Outpost Bio
         ("Outpost Bio",             "Techbio",            "Pre-Seed"),
+        # Ovom Care
+        ("Ovom Care",               "Healthcare",         "Seed"),
         ("Ovom",                    "Healthcare",         "Seed"),
+        # Vara
         ("Vara",                    "Healthcare",         "Series A"),
+        # hoshii.ai
         ("hoshii.ai",               "Data Management",    "Pre-Seed"),
+        ("Hoshii",                  "Data Management",    "Pre-Seed"),
+        # vveave
         ("vveave",                  "Fashion Tech",       "Pre-Seed"),
-        # Additional portfolio companies
+        ("VVEAVE",                  "Fashion Tech",       "Pre-Seed"),
+        # Why Brilliant
         ("Why Brilliant",           "Recruitment",        "Pre-Seed"),
         ("WhyBrilliant",            "Recruitment",        "Pre-Seed"),
+        # Whistle Robotics
         ("Whistle Robotics",        "Robotics",           "Pre-Seed"),
-        ("GraphTX",                 "Techbio",            "Seed"),
+        ("Foundry Robotics",        "Robotics",           "Pre-Seed"),
+        # Graph Therapeutics / GraphTX
         ("Graph Therapeutics",      "Techbio",            "Seed"),
+        ("GraphTX",                 "Techbio",            "Seed"),
+        ("GraphTx",                 "Techbio",            "Seed"),
+        # Ficus Health
         ("Ficus Health",            "Healthcare",         "Seed"),
+        ("FICUS Health",            "Healthcare",         "Seed"),
+        ("Ficus",                   "Healthcare",         "Seed"),
+        ("FICUS",                   "Healthcare",         "Seed"),
+        # briink
         ("briink",                  "Fintech",            "Seed"),
         ("Briink",                  "Fintech",            "Seed"),
+        # cambrium
         ("cambrium",                "Biotech",            "Seed"),
         ("Cambrium",                "Biotech",            "Seed"),
     ]
@@ -435,13 +473,22 @@ def _ensure_portfolio_sectors(bind) -> None:
                 ))
             except Exception as exc:
                 log.warning("funding_stage column migration skipped: %s", exc)
-            # Rename Deltia → Almetra (company rebranded)
-            try:
-                conn.execute(text(
-                    "UPDATE crm_ventures SET name = 'Almetra' WHERE name = 'Deltia'"
-                ))
-            except Exception as exc:
-                log.warning("Deltia→Almetra rename skipped: %s", exc)
+            # Apply known renames (old Attio name → current brand name)
+            RENAMES = [
+                ("Deltia",          "Almetra"),
+                ("Company Shield",  "revel8"),
+                ("Ovom",            "Ovom Care"),
+                ("Meteoric Energy", "Meteoric"),
+                ("Zeus Energy",     "Meteoric"),
+            ]
+            for old, new in RENAMES:
+                try:
+                    conn.execute(text(
+                        "UPDATE crm_ventures SET name = :new WHERE name = :old "
+                        "AND stage ILIKE '%portfolio%'"
+                    ), {"new": new, "old": old})
+                except Exception as exc:
+                    log.warning("Rename %s→%s skipped: %s", old, new, exc)
             # Backfill sector + funding_stage for known companies
             for name, sector, fs in PORTFOLIO_DATA:
                 try:
