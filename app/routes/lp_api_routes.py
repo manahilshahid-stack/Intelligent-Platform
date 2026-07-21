@@ -247,7 +247,7 @@ def _venture_to_dict(v, index: int = 0) -> dict:
         "name": v.name,
         "tagline": v.description or f"{v.name} — Merantix Capital portfolio company",
         "category": v.sector or "Deep Tech",
-        "stage": "Seed",
+        "stage": getattr(v, "funding_stage", None) or "Early Stage",
         "founders": [],
         "website": website,
         "status": "Active",

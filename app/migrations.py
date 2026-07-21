@@ -384,7 +384,56 @@ def run_migrations(bind: Engine = engine) -> None:
     # 7. OTP email-verification columns
     _ensure_otp_columns(bind)
 
+    # 8. Portfolio company sector + funding_stage corrections
+    _ensure_portfolio_sectors(bind)
+
     log.info("Schema migrations complete.")
+
+
+def _ensure_portfolio_sectors(bind) -> None:
+    """
+    Add funding_stage column and backfill sector + funding_stage
+    for known Merantix Capital portfolio companies. Idempotent.
+    """
+    # Known portfolio company data: (name_in_db, sector, funding_stage)
+    PORTFOLIO_DATA = [
+        ("Arqh",                    "Logistics",          "Pre-Seed"),
+        ("CULTZYME",                "Techbio",            "Pre-Seed"),
+        ("Company Shield",          "Cybersecurity",      "Seed"),
+        ("Deltia",                  "Manufacturing",      "Series A"),
+        ("Droidrun",                "Mobile AI",          "Pre-Seed"),
+        ("Libra (Legal Services)",  "Legal Tech",         "Acquired"),
+        ("Mage Metrics",            "Enterprise Software","Seed"),
+        ("Meteoric Energy",         "Energy",             "Pre-Seed"),
+        ("Molecular Glue Labs",     "Techbio",            "Seed"),
+        ("Outpost Bio",             "Techbio",            "Pre-Seed"),
+        ("Ovom",                    "Healthcare",         "Seed"),
+        ("Vara",                    "Healthcare",         "Series A"),
+        ("hoshii.ai",               "Data Management",    "Pre-Seed"),
+        ("vveave",                  "Fashion Tech",       "Pre-Seed"),
+    ]
+    try:
+        with bind.begin() as conn:
+            if not _is_postgres(conn):
+                return  # SQLite uses create_all; run direct update instead
+            # Add funding_stage column if missing
+            try:
+                conn.execute(text(
+                    "ALTER TABLE crm_ventures ADD COLUMN IF NOT EXISTS funding_stage VARCHAR(100)"
+                ))
+            except Exception as exc:
+                log.warning("funding_stage column migration skipped: %s", exc)
+            # Backfill sector + funding_stage for known companies
+            for name, sector, fs in PORTFOLIO_DATA:
+                try:
+                    conn.execute(text(
+                        "UPDATE crm_ventures SET sector = :sector, funding_stage = :fs "
+                        "WHERE name = :name AND stage ILIKE '%portfolio%'"
+                    ), {"sector": sector, "fs": fs, "name": name})
+                except Exception as exc:
+                    log.warning("Portfolio sector update skipped for %s: %s", name, exc)
+    except Exception as exc:
+        log.warning("Portfolio sector migration failed: %s", exc)
 
 
 def _ensure_otp_columns(bind) -> None:
