@@ -744,6 +744,7 @@ def api_chat(
                 focus_company = body.company_name
             # Expand search query with old company names so notes using former names are found
             search_query = _expand_query_with_aliases(search_query)
+            focus_aliases = COMPANY_ALIASES.get((focus_company or "").lower(), []) if focus_company else []
             chunks = retrieve_for_chat(
                 query=search_query,
                 user=temp_user,
@@ -751,6 +752,7 @@ def api_chat(
                 limit=25,
                 viewer_scope="lp",
                 focus_company=focus_company,
+                focus_aliases=focus_aliases,
             )
             if chunks:
                 context = build_context(chunks)
@@ -1003,8 +1005,11 @@ async def api_chat_stream(
         if not focus_company and body.company_name:
             focus_company = body.company_name
         search_query = _expand_query_with_aliases(search_query)
+        # Pass aliases so old-indexed chunks (pre-rename) still match the focus company
+        focus_aliases = COMPANY_ALIASES.get((focus_company or "").lower(), []) if focus_company else []
         chunks = retrieve_for_chat(query=search_query, user=temp_user, db=db,
-                                   limit=25, viewer_scope="lp", focus_company=focus_company)
+                                   limit=25, viewer_scope="lp", focus_company=focus_company,
+                                   focus_aliases=focus_aliases)
     except Exception as exc:
         log.error("Streaming retrieval error: %s", exc, exc_info=True)
         chunks = []

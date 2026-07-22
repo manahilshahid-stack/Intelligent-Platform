@@ -805,16 +805,36 @@ def _apply_free_text_gate(results: list[ChunkResult]) -> list[ChunkResult]:
     return results
 
 
-def _matches_focus(c: ChunkResult, focus: str) -> bool:
-    """True if chunk *c* belongs to the focus company (loose, case-insensitive match)."""
+def _matches_focus(c: ChunkResult, focus: str, aliases: list[str] | None = None) -> bool:
+    """
+    True if chunk *c* belongs to the focus company.
+    Checks company_name, crm_venture_name, the chunk text prefix, and any aliases
+    (e.g. old company names) so renamed companies still match their historical chunks.
+    """
     f = focus.lower().strip()
     if not f:
         return True
+    # Build full set of names to match against (focus + all aliases)
+    all_targets = {f}
+    if aliases:
+        all_targets.update(a.lower().strip() for a in aliases if a)
+
+    # Check structured name fields first
     for nm in (getattr(c, "company_name", None), getattr(c, "crm_venture_name", None)):
         if nm:
-            nm = nm.lower()
-            if f in nm or nm in f:
+            nm_l = nm.lower()
+            if any(t in nm_l or nm_l in t for t in all_targets):
                 return True
+
+    # Also check the first line of chunk text ("Company: <name>") so old indexed
+    # chunks that weren't re-indexed after a rename still match.
+    text = getattr(c, "text", None) or ""
+    first_line = text.splitlines()[0].lower() if text else ""
+    if first_line.startswith("company:"):
+        nm_from_text = first_line[len("company:"):].strip()
+        if nm_from_text and any(t in nm_from_text or nm_from_text in t for t in all_targets):
+            return True
+
     return False
 
 
@@ -1022,6 +1042,7 @@ def retrieve_for_chat(
     limit: int = 8,
     viewer_scope: str = "admin",
     focus_company: str | None = None,
+    focus_aliases: list[str] | None = None,
 ) -> list[ChunkResult]:
     """
     Unified, role-gated chat retrieval. Scoring runs on the real chunk text;
@@ -1072,11 +1093,10 @@ def retrieve_for_chat(
 
     # Deterministic follow-ups: when the question resolved to a single company,
     # hard-scope results to that company so "their team structure" can't drift to
-    # another company. If nothing matches (rare), fall back to the full set.
+    # another company. When nothing matches, return empty — the caller will use
+    # live web context + LLM knowledge rather than leaking other companies' data.
     if focus_company:
-        focused = [c for c in combined if _matches_focus(c, focus_company)]
-        if focused:
-            combined = focused
+        combined = [c for c in combined if _matches_focus(c, focus_company, aliases=focus_aliases)]
 
     # Boost scores using LP feedback — chunks rated helpful surface higher over time
     for r in combined:
