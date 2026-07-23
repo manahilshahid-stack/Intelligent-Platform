@@ -48,6 +48,9 @@ class ChunkResult:
     source_type: str = "portfolio"  # "portfolio" | "crm_venture"
     # Non-admin-safe copy for crm_note/crm_file chunks (None if not generated)
     sanitized_text: str | None = None
+    # When the underlying CRM record was last updated (venture.updated_at or note date).
+    # Used for recency scoring and to stamp context blocks shown to the LLM.
+    source_date: "datetime | None" = None
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +449,15 @@ def retrieve_knowledge_chunks(
             # Company name from venture or chunk attribute
             company_name = venture.name if venture else getattr(chunk, 'company_name', 'Unknown')
 
+            # Source date: prefer venture's last update; fall back to sync/created time
+            source_date = None
+            if venture:
+                source_date = (
+                    getattr(venture, "updated_at", None)
+                    or getattr(venture, "synced_at", None)
+                    or getattr(venture, "created_at", None)
+                )
+
             # Build result with safe attribute access
             results.append(ChunkResult(
                 chunk_id=chunk.id,
@@ -463,6 +475,7 @@ def retrieve_knowledge_chunks(
                 themes=themes,
                 source_type=source_type,
                 sanitized_text=getattr(chunk, 'sanitized_text', None),
+                source_date=source_date,
             ))
         except Exception as e:
             log.error(f"[DEBUG] Error building result for chunk {chunk.id}: {e}", exc_info=True)
@@ -685,6 +698,13 @@ def _retrieve_crm_chunks(
             doc_title = "Attio File"
         else:
             doc_title = "CRM / Attio"
+        src_date = None
+        if venture:
+            src_date = (
+                getattr(venture, "updated_at", None)
+                or getattr(venture, "synced_at", None)
+                or getattr(venture, "created_at", None)
+            )
         results.append(ChunkResult(
             chunk_id=chunk.id,
             document_id=None,
@@ -700,6 +720,7 @@ def _retrieve_crm_chunks(
             sector=chunk.sector,
             themes=themes,
             source_type=src_type,
+            source_date=src_date,
         ))
     return results
 
@@ -1111,6 +1132,30 @@ def retrieve_for_chat(
                 fb = 0.0
         # Small additive boost: ±0.05 per feedback point (max ±0.25 at score=±5)
         r.score = r.score + (fb * 0.05)
+
+    # Recency boost — surface fresh evaluations over stale ones.
+    # Only applied to CRM-sourced chunks (source_date is populated there).
+    import datetime as _dt
+    _now = _dt.datetime.utcnow()
+    for r in combined:
+        sd = getattr(r, "source_date", None)
+        if sd is None:
+            continue
+        try:
+            age_days = (_now - sd).days
+        except Exception:
+            continue
+        if age_days < 90:      # < 3 months — very fresh
+            boost = 0.06
+        elif age_days < 180:   # < 6 months
+            boost = 0.03
+        elif age_days < 365:   # < 1 year
+            boost = 0.01
+        elif age_days < 730:   # 1-2 years — neutral
+            boost = 0.0
+        else:                  # > 2 years — stale
+            boost = -0.02
+        r.score = r.score + boost
 
     combined.sort(key=lambda r: r.score, reverse=True)
     combined = combined[:pool]

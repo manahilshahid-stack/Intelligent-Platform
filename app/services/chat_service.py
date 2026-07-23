@@ -82,6 +82,22 @@ CROSS-COMPANY ACCURACY: Be careful not to mix up people across companies. \
 Jonas Muff is at Vara, not Almetra. If you are uncertain about a specific name, \
 you may note that briefly — but only if genuinely uncertain, not as a default hedge.
 
+TEMPORAL SKEPTICISM — DATA FRESHNESS:
+Each CRM context block carries an "Activity:" date showing when Merantix last \
+engaged with that company. You MUST use this to reason about freshness:
+- Lead with the most recently active companies. A company with Activity: Jun 2025 \
+  is more relevant than one from Activity: Jan 2023.
+- When a sector question spans multiple evaluations, order your answer with the \
+  freshest ones first. Do not treat a two-year-old evaluation as current intelligence.
+- If the most recent activity on a company is over 12 months ago, say so briefly: \
+  "Note: Merantix's evaluation of X dates to [date] — the landscape may have shifted."
+- Never omit dates when they change the picture. Stale pipeline data about a \
+  company that may have since pivoted, raised, or failed is misleading without context.
+- For current state of a sector (trends, active players, recent deals), supplement \
+  the internal CRM data with your general market knowledge and clearly distinguish \
+  the two: "Internally, as of [date], Merantix evaluated X… More recently in the \
+  market, [broader context]."
+
 NEVER open your response with meta-commentary about data availability. \
 Do NOT start with "Based on what's publicly available…", \
 "I don't have the exact…", "The context doesn't contain…", or any variant. \
@@ -192,7 +208,16 @@ def build_context(chunks) -> str:
     """
     Format retrieved ChunkResult objects into a numbered context block.
     Portfolio chunks show Company + Document; CRM chunks show Company + Attio link.
+    CRM chunks also carry an "Activity:" date so the LLM can reason about data freshness.
     """
+    import datetime as _dt_ctx
+
+    def _fmt_date(d) -> str:
+        try:
+            return d.strftime("%b %Y")
+        except Exception:
+            return ""
+
     parts: list[str] = []
     for i, chunk in enumerate(chunks, start=1):
         src = getattr(chunk, "source_type", "portfolio")
@@ -211,6 +236,12 @@ def build_context(chunks) -> str:
                 meta += f" | Sector: {sector}"
             if themes:
                 meta += f" | Themes: {themes}"
+            # Stamp the freshness date so the model knows how recent this data is
+            sd = getattr(chunk, "source_date", None)
+            if sd:
+                date_str = _fmt_date(sd)
+                if date_str:
+                    meta += f" | Activity: {date_str}"
             if attio:
                 meta += f" | Attio: {attio}"
             parts.append(
