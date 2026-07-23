@@ -52,6 +52,7 @@ COMPANY_ALIASES: dict[str, list[str]] = {
     "revel8":           ["company shield"],
 }
 
+
 # Flat reverse map: old name → current name (for display correction)
 _OLD_TO_NEW: dict[str, str] = {
     old.lower(): new
@@ -81,7 +82,8 @@ def _build_alias_context() -> str:
 def _fetch_live_company_context(company_name: str, db: Session) -> str:
     """
     Fetch live content from the company's website and recent web search.
-    Returns a formatted string to inject as context, or "" on failure.
+    Hits homepage + team/about sub-pages so founder and team data is always included.
+    Returns a formatted context string, or "" on complete failure.
     """
     import httpx
     from html.parser import HTMLParser
@@ -91,13 +93,21 @@ def _fetch_live_company_context(company_name: str, db: Session) -> str:
         def __init__(self):
             super().__init__()
             self._skip = False
+            self._depth = 0
             self.parts: list[str] = []
+
         def handle_starttag(self, tag, attrs):
-            if tag in ("script", "style", "nav", "footer", "head", "noscript"):
+            if tag in ("script", "style", "nav", "footer", "head", "noscript", "iframe"):
                 self._skip = True
+                self._depth += 1
+
         def handle_endtag(self, tag):
-            if tag in ("script", "style", "nav", "footer", "head", "noscript"):
-                self._skip = False
+            if tag in ("script", "style", "nav", "footer", "head", "noscript", "iframe"):
+                self._depth -= 1
+                if self._depth <= 0:
+                    self._skip = False
+                    self._depth = 0
+
         def handle_data(self, data):
             if not self._skip:
                 stripped = data.strip()
@@ -114,6 +124,16 @@ def _fetch_live_company_context(company_name: str, db: Session) -> str:
         text = re.sub(r"\s+", " ", text).strip()
         return text[:max_chars]
 
+    def _fetch_url(client: "httpx.Client", url: str, max_chars: int = 3000) -> str:
+        """Fetch a URL and return clean text, or "" on any failure."""
+        try:
+            r = client.get(url, timeout=7, follow_redirects=True)
+            if r.status_code == 200 and "text/html" in r.headers.get("content-type", ""):
+                return _html_to_text(r.text, max_chars)
+        except Exception:
+            pass
+        return ""
+
     # Look up website from DB (try exact name match + aliases)
     aliases = COMPANY_ALIASES.get(company_name.lower(), [])
     name_variants = [company_name] + [a.title() for a in aliases]
@@ -128,35 +148,47 @@ def _fetch_live_company_context(company_name: str, db: Session) -> str:
             break
 
     results: list[str] = []
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; Merantix-LP-Bot/1.0)"}
+    ua = {"User-Agent": "Mozilla/5.0 (compatible; Merantix-LP-Bot/1.0)"}
 
-    # 1. Fetch company website homepage
     if venture and venture.website and venture.website not in ("tbd", "n/a", ""):
         raw = venture.website.strip()
-        url = raw if raw.startswith("http") else f"https://{raw}"
-        try:
-            with httpx.Client(timeout=8, follow_redirects=True, headers=headers) as client:
-                r = client.get(url)
-                if r.status_code == 200:
-                    text = _html_to_text(r.text, max_chars=3000)
-                    if text:
-                        results.append(
-                            f"=== {company_name} WEBSITE (live, fetched now) ===\n{text}"
-                        )
-        except Exception as exc:
-            log.debug("Live website fetch failed for %s: %s", company_name, exc)
+        base_url = raw if raw.startswith("http") else f"https://{raw}"
+        base_url = base_url.rstrip("/")
 
-    # 2. DuckDuckGo Lite search for recent news (no API key required)
+        with httpx.Client(headers=ua, timeout=10, follow_redirects=True) as client:
+            # 1. Homepage
+            homepage_text = _fetch_url(client, base_url, max_chars=2500)
+            if homepage_text:
+                results.append(f"=== {company_name} WEBSITE — Homepage ===\n{homepage_text}")
+
+            # 2. Team / About pages — highest priority for founder data
+            team_paths = ["/team", "/about", "/about-us", "/founders", "/company", "/people", "/our-team"]
+            fetched_team = False
+            for path in team_paths:
+                text = _fetch_url(client, base_url + path, max_chars=2500)
+                if text and len(text) > 200:
+                    results.append(f"=== {company_name} WEBSITE — {path.strip('/')} page ===\n{text}")
+                    fetched_team = True
+                    break  # one team page is enough
+
+    # 3. Targeted DuckDuckGo searches — team/founders + recent news
     try:
-        q = f"{company_name} startup AI 2025 2026 funding product"
-        with httpx.Client(timeout=8, follow_redirects=True, headers=headers) as client:
-            r = client.get("https://html.duckduckgo.com/html/", params={"q": q})
+        with httpx.Client(headers=ua, timeout=8, follow_redirects=True) as client:
+            # Founder-specific search
+            q_team = f'"{company_name}" founder CEO team site:linkedin.com OR site:crunchbase.com OR site:{(venture.website or "").lstrip("https://").split("/")[0] if venture and venture.website else ""}'
+            r = client.get("https://html.duckduckgo.com/html/", params={"q": q_team})
             if r.status_code == 200:
-                text = _html_to_text(r.text, max_chars=2500)
+                text = _html_to_text(r.text, max_chars=2000)
                 if text:
-                    results.append(
-                        f"=== {company_name} RECENT WEB RESULTS (live search) ===\n{text}"
-                    )
+                    results.append(f"=== {company_name} TEAM / FOUNDERS (web search) ===\n{text}")
+
+            # Recent news / product search
+            q_news = f"{company_name} startup 2024 2025 2026 funding product launch"
+            r = client.get("https://html.duckduckgo.com/html/", params={"q": q_news})
+            if r.status_code == 200:
+                text = _html_to_text(r.text, max_chars=2000)
+                if text:
+                    results.append(f"=== {company_name} RECENT NEWS (web search) ===\n{text}")
     except Exception as exc:
         log.debug("Live search failed for %s: %s", company_name, exc)
 
@@ -769,7 +801,8 @@ def api_chat(
                 if body.company_name:
                     context = (
                         f"COMPANY FOCUS MODE — STRICT: This conversation is exclusively about "
-                        f"'{body.company_name}'. You must ONLY answer questions about this company. "
+                        f"'{body.company_name}'.\n"
+                        f"You must ONLY answer questions about this company. "
                         f"Do not discuss, compare, or mention any other company unless the user "
                         f"explicitly asks for a comparison. If the user asks something unrelated to "
                         f"'{body.company_name}', redirect them: 'This chat is focused on {body.company_name} — "
