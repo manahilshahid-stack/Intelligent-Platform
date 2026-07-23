@@ -286,6 +286,7 @@ def build_crm_venture_text(venture) -> str:
 
     # Core identity
     _add("Company", _field("name", "company_name") or venture.name)
+    _add("Founders", getattr(venture, "founders", None))
     _add("Website/domain", _field("domains", "website", "domain", "url") or venture.website)
     _add("Description", _field("description", "about", "bio") or venture.description)
     _add("Categories", _field("categories", "category"))
@@ -357,11 +358,13 @@ def build_crm_venture_chunks(venture) -> list[tuple[str, str]]:
 
     # ── Chunk A: Overview ─────────────────────────────────────────────────
     lines_a: list[str] = [prefix]
+    founders = getattr(venture, "founders", None)
     website = _field("domains", "website", "domain", "url") or venture.website
     desc = _field("description", "about", "bio") or venture.description
     cats = _field("categories", "category")
     ai = _field("ai_checkbox", "is_ai")
     linkedin = _field("linkedin", "linkedin_url")
+    if founders:  lines_a.append(f"Founders: {founders}")
     if website:   lines_a.append(f"Website: {website}")
     if desc:      lines_a.append(f"Description: {desc}")
     if cats:      lines_a.append(f"Categories: {cats}")

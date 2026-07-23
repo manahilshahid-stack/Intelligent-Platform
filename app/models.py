@@ -496,6 +496,7 @@ class CrmVenture(Base):
     stage: Mapped[str | None] = mapped_column(String(200))
     sector: Mapped[str | None] = mapped_column(String(200))
     funding_stage: Mapped[str | None] = mapped_column(String(100))
+    founders: Mapped[str | None] = mapped_column(String(500))   # comma-separated public founder names
     owner: Mapped[str | None] = mapped_column(String(200))
     source: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str | None] = mapped_column(String(200))

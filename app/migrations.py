@@ -462,6 +462,32 @@ def _ensure_portfolio_sectors(bind) -> None:
         ("cambrium",                "Biotech",            "Seed"),
         ("Cambrium",                "Biotech",            "Seed"),
     ]
+    # Founders data: maps the canonical company name to a comma-separated founders string.
+    # These are publicly available names from company websites / LinkedIn.
+    FOUNDERS_DATA: dict[str, str] = {
+        "Almetra":          "Maximilian Fischer, Silviu Homoceanu",
+        "Vara":             "Jonas Muff, Stefan Bunk",
+        "Cambrium":         "Mitchell Duffy, Charlie Cotton",
+        "GraphTX":          "Gregory Vladimer, Robert Sehlke, Berend Snijder",
+        "Graph Therapeutics":"Gregory Vladimer, Robert Sehlke, Berend Snijder",
+        "Ovom Care":        "Felicia von Reden, Lynae Brayboy",
+        "Droidrun":         "Peter Lachner, Niels Schmidt, Christian Ninstel, Nikolai Duck",
+        "Arqh":             "Antonia Unger, Mert Erkul",
+        "briink":           "Tomas van der Heijden, Samuel King",
+        "Briink":           "Tomas van der Heijden, Samuel King",
+        "revel8":           "Julius Muth, Tom Müller, Robert Seilbeck",
+        "Revel8":           "Julius Muth, Tom Müller, Robert Seilbeck",
+        "Ficus Health":     "Benjamin Pochhammer, Mario Elstner",
+        "Outpost Bio":      "Jenny Yang, Alex Merwin",
+        "Why Brilliant":    "Patrick Böert, Aleksander Heimrath",
+        "WhyBrilliant":     "Patrick Böert, Aleksander Heimrath",
+        "Whistle Robotics": "Felix Dünkel, Konrad Lauer",
+        "Libratech":        "Viktor von Essen, Bo Tranberg",
+        "Libra":            "Viktor von Essen, Bo Tranberg",
+        "hoshii.ai":        "Yannic Wenker, Mark Chahine",
+        "Mage Metrics":     "Lukas Höing, Fabian Klopfer",
+    }
+
     try:
         with bind.begin() as conn:
             if not _is_postgres(conn):
@@ -473,6 +499,13 @@ def _ensure_portfolio_sectors(bind) -> None:
                 ))
             except Exception as exc:
                 log.warning("funding_stage column migration skipped: %s", exc)
+            # Add founders column if missing
+            try:
+                conn.execute(text(
+                    "ALTER TABLE crm_ventures ADD COLUMN IF NOT EXISTS founders VARCHAR(500)"
+                ))
+            except Exception as exc:
+                log.warning("founders column migration skipped: %s", exc)
             # Apply known renames (old Attio name → current brand name)
             RENAMES = [
                 ("Deltia",          "Almetra"),
@@ -498,6 +531,15 @@ def _ensure_portfolio_sectors(bind) -> None:
                     ), {"sector": sector, "fs": fs, "name": name})
                 except Exception as exc:
                     log.warning("Portfolio sector update skipped for %s: %s", name, exc)
+            # Backfill founders
+            for name, founders in FOUNDERS_DATA.items():
+                try:
+                    conn.execute(text(
+                        "UPDATE crm_ventures SET founders = :founders "
+                        "WHERE name = :name"
+                    ), {"founders": founders, "name": name})
+                except Exception as exc:
+                    log.warning("Founders update skipped for %s: %s", name, exc)
     except Exception as exc:
         log.warning("Portfolio sector migration failed: %s", exc)
 
