@@ -109,6 +109,24 @@ def _extract_txt(data: bytes) -> str:
 # Public interface
 # ---------------------------------------------------------------------------
 
+def _sanitize_text(text: str) -> str:
+    """
+    Make extracted text safe for PostgreSQL TEXT columns.
+
+    PDF extractors (pdfplumber) can emit NUL (0x00) bytes from embedded fonts,
+    which PostgreSQL rejects with "text fields cannot contain NUL (0x00) bytes".
+    Also strips other C0 control characters except tab/newline/carriage return.
+    """
+    if not text:
+        return text
+    if "\x00" in text:
+        text = text.replace("\x00", "")
+    return "".join(
+        ch for ch in text
+        if ch >= " " or ch in ("\n", "\t", "\r")
+    )
+
+
 def extract_text(filename: str, data: bytes) -> str:
     """
     Extract plain text from file bytes.
@@ -118,17 +136,18 @@ def extract_text(filename: str, data: bytes) -> str:
     ext = get_extension(filename)
     try:
         if ext == "pdf":
-            return _extract_pdf(data)
+            text = _extract_pdf(data)
         elif ext in ("xlsx", "xlsm"):
-            return _extract_xlsx(data)
+            text = _extract_xlsx(data)
         elif ext == "docx":
-            return _extract_docx(data)
+            text = _extract_docx(data)
         elif ext == "pptx":
-            return _extract_pptx(data)
+            text = _extract_pptx(data)
         elif ext == "txt":
-            return _extract_txt(data)
+            text = _extract_txt(data)
         else:
             raise ValueError(f"Unsupported file type: .{ext}")
+        return _sanitize_text(text)
     except ValueError:
         raise
     except Exception as exc:
