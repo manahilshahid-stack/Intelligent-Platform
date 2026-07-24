@@ -34,40 +34,93 @@ def admin_reporting_tracker(
     request: Request,
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
-    company_id: int | None = None,
     year: int | None = None,
-    period: str | None = None,
-    filter_status: str | None = None,
+    quarter: int | None = None,
+    message: str | None = None,
+    error: str | None = None,
 ):
-    all_rows = build_portfolio_tracker(db)
+    from ..services.email_service import smtp_configured
+    from ..services.reminder_service import (
+        current_collection_period, due_date, get_founder_contacts,
+        recent_periods, reminder1_date, status_for,
+    )
+
+    cur_year, cur_q = current_collection_period()
+    year = year or cur_year
+    quarter = quarter or cur_q
+
     companies = list(db.scalars(select(Company).order_by(Company.name)).all())
+    rows = []
+    for c in companies:
+        state = status_for(db, c, year, quarter)
+        rows.append({
+            "company": c,
+            "founders": get_founder_contacts(c, db),
+            **state,
+        })
 
-    # Filter
-    rows = all_rows
-    if company_id:
-        rows = [r for r in rows if r.company_id == company_id]
-    if year:
-        rows = [r for r in rows if r.year == year]
-    if period:
-        rows = [r for r in rows if r.period_label == period]
-    if filter_status:
-        rows = [r for r in rows if r.status == filter_status]
-
-    # Available years for filter
-    years = sorted({r.year for r in all_rows}, reverse=True)
+    uploaded = sum(1 for r in rows if r["status"] == "uploaded")
 
     return _render(request, "admin/reporting_tracker.html", {
         "user": admin,
         "rows": rows,
-        "companies": companies,
-        "years": years,
-        "filter_company_id": company_id,
-        "filter_year": year,
-        "filter_period": period,
-        "filter_status": filter_status,
-        "total": len(all_rows),
-        "missing_count": sum(1 for r in all_rows if r.status == "missing"),
+        "year": year,
+        "quarter": quarter,
+        "periods": recent_periods(6),
+        "due": due_date(year, quarter),
+        "r1_date": reminder1_date(year, quarter),
+        "uploaded": uploaded,
+        "total": len(rows),
+        "smtp_ok": smtp_configured(),
+        "message": message,
+        "error": error,
     })
+
+
+@router.post("/admin/reporting-tracker/sweep", response_class=HTMLResponse)
+def reminder_sweep_now(
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    from urllib.parse import quote
+    from fastapi import status as _status
+    from fastapi.responses import RedirectResponse
+    from ..services.reminder_service import run_reminder_sweep
+
+    result = run_reminder_sweep(db)
+    return RedirectResponse(
+        f"/admin/reporting-tracker?message={quote(result['message'])}",
+        status_code=_status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/admin/reporting-tracker/{company_id}/send", response_class=HTMLResponse)
+def send_reminder_now(
+    company_id: int,
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    year: int = Form(...),
+    quarter: int = Form(...),
+    which: int = Form(...),
+):
+    from urllib.parse import quote
+    from fastapi import HTTPException
+    from fastapi import status as _status
+    from fastapi.responses import RedirectResponse
+    from ..services.reminder_service import send_reminder
+
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    result = send_reminder(db, company, year, quarter, which=which)
+    param = "message" if result["ok"] else "error"
+    return RedirectResponse(
+        f"/admin/reporting-tracker?year={year}&quarter={quarter}&{param}={quote(result['message'])}",
+        status_code=_status.HTTP_303_SEE_OTHER,
+    )
 
 
 # ---------------------------------------------------------------------------

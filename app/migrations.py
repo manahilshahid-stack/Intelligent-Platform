@@ -180,6 +180,8 @@ _COLUMN_ADDITIONS: list[tuple[str, str, str]] = [
     ("chunks", "reporting_quarter", "INTEGER"),
     ("chunks", "reporting_month", "INTEGER"),
     ("chunks", "meta", "TEXT"),
+    # companies — founder contacts for reminders
+    ("companies", "founder_contacts", "TEXT"),
 ]
 
 
@@ -209,6 +211,8 @@ def _ensure_columns(conn) -> None:
         _add_column_if_missing(conn, "chunks", "reporting_quarter", "INTEGER")
         _add_column_if_missing(conn, "chunks", "reporting_month", "INTEGER")
         _add_column_if_missing(conn, "chunks", "meta", "TEXT")
+    if _table_exists(conn, "companies"):
+        _add_column_if_missing(conn, "companies", "founder_contacts", "TEXT")
 
     # Column back-fills below use Postgres-specific DDL (BYTEA, enum FK types).
     # On SQLite (local dev), create_all already creates the full schema, so

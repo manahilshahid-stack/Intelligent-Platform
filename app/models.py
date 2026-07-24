@@ -131,6 +131,9 @@ class Company(Base):
     description: Mapped[str | None] = mapped_column(Text)
     # Optional Google Drive folder where this company drops its reports
     drive_folder_url: Mapped[str | None] = mapped_column(Text)
+    # Founder contacts for report reminders: JSON [{"name": ..., "email": ...}].
+    # Names are prefilled from the Attio-synced venture; emails entered by admin.
+    founder_contacts: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
     users: Mapped[list["User"]] = relationship(back_populates="company")
@@ -465,6 +468,31 @@ class FundReport(Base):
     @property
     def period_label(self) -> str:
         return f"{self.year}-Q{self.quarter}"
+
+
+class QuarterlyReminder(Base):
+    """Reminder state for one company × quarter. Together with the presence of
+    a quarterly report document, this drives the tracker status:
+    Not uploaded yet → First reminder sent → Second reminder sent → Uploaded."""
+    __tablename__ = "quarterly_reminders"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False
+    )
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    quarter: Mapped[int] = mapped_column(Integer, nullable=False)  # 1-4
+    first_sent_at: Mapped[datetime | None] = mapped_column(DateTime)
+    second_sent_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # Last send error (e.g. missing founder email / SMTP failure), for the tracker
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+
+    company: Mapped[Company] = relationship()
+
+    __table_args__ = (
+        Index("ix_quarterly_reminders_period", "company_id", "year", "quarter", unique=True),
+    )
 
 
 class CompanyReportingSettings(Base):

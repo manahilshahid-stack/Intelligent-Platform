@@ -426,27 +426,21 @@ textarea { resize: vertical; line-height: 1.55; }
       {% if user is defined and user and user.role.value == "admin" %}
       <div class="nav-section-label">Portfolio</div>
 
+      <a href="/admin/companies" class="nav-item {% if '/admin/companies' in request.url.path %}active{% endif %}">
+        <span class="nav-icon">🏢</span>
+        <span class="nav-label">Portfolio Companies</span>
+      </a>
+
       <a href="/admin/reporting-tracker" class="nav-item {% if '/admin/reporting-tracker' in request.url.path %}active{% endif %}">
         <span class="nav-icon">📊</span>
         <span class="nav-label">Tracker</span>
       </a>
 
-      <a href="/admin/companies" class="nav-item {% if '/admin/companies' in request.url.path %}active{% endif %}">
-        <span class="nav-icon">🏢</span>
-        <span class="nav-label">Companies</span>
-      </a>
+      <div class="nav-section-label">Admin</div>
 
       <a href="/admin/fund-reports" class="nav-item {% if '/admin/fund-reports' in request.url.path %}active{% endif %}">
         <span class="nav-icon">📑</span>
         <span class="nav-label">Fund reports</span>
-      </a>
-      {% endif %}
-
-      <div class="nav-section-label">Main</div>
-
-      <a href="/dashboard" class="nav-item {% if request.url.path == '/dashboard' %}active{% endif %}">
-        <span class="nav-icon">⊞</span>
-        <span class="nav-label">Dashboard</span>
       </a>
 
       <a href="/documents" class="nav-item {% if '/documents' in request.url.path %}active{% endif %}">
@@ -459,8 +453,10 @@ textarea { resize: vertical; line-height: 1.55; }
         <span class="nav-label">Chat</span>
       </a>
 
-      {% if user is defined and user and user.role.value == "admin" %}
-      <div class="nav-section-label">Admin</div>
+      <a href="/dashboard" class="nav-item {% if request.url.path == '/dashboard' %}active{% endif %}">
+        <span class="nav-icon">⊞</span>
+        <span class="nav-label">Dashboard</span>
+      </a>
 
       <a href="/admin" class="nav-item {% if request.url.path == '/admin' %}active{% endif %}">
         <span class="nav-icon">⚙</span>
@@ -488,6 +484,23 @@ textarea { resize: vertical; line-height: 1.55; }
       <a href="/admin/settings" class="nav-item {% if '/admin/settings' in request.url.path %}active{% endif %}">
         <span class="nav-icon">🔑</span>
         <span class="nav-label">Settings</span>
+      </a>
+      {% else %}
+      <div class="nav-section-label">Main</div>
+
+      <a href="/dashboard" class="nav-item {% if request.url.path == '/dashboard' %}active{% endif %}">
+        <span class="nav-icon">⊞</span>
+        <span class="nav-label">Dashboard</span>
+      </a>
+
+      <a href="/documents" class="nav-item {% if '/documents' in request.url.path %}active{% endif %}">
+        <span class="nav-icon">📄</span>
+        <span class="nav-label">Documents</span>
+      </a>
+
+      <a href="/chat" class="nav-item {% if request.url.path == '/chat' %}active{% endif %}">
+        <span class="nav-icon">💬</span>
+        <span class="nav-label">Chat</span>
       </a>
       {% endif %}
 

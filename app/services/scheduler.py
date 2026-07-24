@@ -63,6 +63,21 @@ def run_full_refresh() -> None:
         log.info("scheduled refresh: END")
 
 
+def run_reminder_sweep_job() -> None:
+    """Daily quarterly-report reminder sweep (own DB session, never raises)."""
+    from ..database import SessionLocal
+    from .reminder_service import run_reminder_sweep
+
+    db = SessionLocal()
+    try:
+        result = run_reminder_sweep(db)
+        log.info("reminder sweep: %s", result.get("message"))
+    except Exception as exc:  # noqa: BLE001
+        log.error("reminder sweep failed: %s", exc, exc_info=True)
+    finally:
+        db.close()
+
+
 def _sync_ventures(db):
     from .attio_sync import sync_attio_list_ventures
     sync_attio_list_ventures(db)
@@ -153,6 +168,24 @@ def start_scheduler():
         id="full_refresh",
         max_instances=1,       # never overlap with a still-running refresh
         coalesce=True,         # collapse missed runs into a single run
+        misfire_grace_time=3600,
+        replace_existing=True,
+    )
+
+    # Daily quarterly-report reminder sweep (default 09:00). Sends reminder 1
+    # on the 8th and reminder 2 on the 15th of the month after each quarter,
+    # to founders of companies whose report is missing. Idempotent.
+    reminder_cron = os.getenv("REMINDER_CRON", "0 9 * * *")
+    try:
+        reminder_trigger = CronTrigger.from_crontab(reminder_cron, timezone=tz)
+    except Exception:
+        reminder_trigger = CronTrigger.from_crontab("0 9 * * *", timezone=tz)
+    sched.add_job(
+        run_reminder_sweep_job,
+        trigger=reminder_trigger,
+        id="reminder_sweep",
+        max_instances=1,
+        coalesce=True,
         misfire_grace_time=3600,
         replace_existing=True,
     )

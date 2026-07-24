@@ -164,6 +164,7 @@ def company_bucket(
     success: str | None = None,
 ):
     from ..models import CompanyReportingSettings, DocumentCategory
+    from ..services.reminder_service import get_founder_contacts
     from ..services.reporting_service import build_rows_for_company, get_irregular_docs
 
     company = db.get(Company, company_id)
@@ -206,6 +207,7 @@ def company_bucket(
     return _render(request, "admin/company_bucket.html", {
         "user": admin,
         "now_year": _date.today().year,
+        "founders": get_founder_contacts(company, db),
         "company": company,
         "grouped_docs": grouped,
         "doc_count": len(docs),
@@ -269,6 +271,41 @@ def sync_company_drive(
     background_tasks.add_task(_sync_drive_background, company_id, admin.id)
     return RedirectResponse(
         f"/admin/companies/{company_id}?success=Drive+sync+started+—+new+files+will+appear+here+in+a+few+minutes.",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/companies/{company_id}/founders", response_class=HTMLResponse)
+def update_founders(
+    company_id: int,
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    founders_text: Annotated[str, Form()] = "",
+):
+    """Save founder contacts. One per line: 'Name <email@company.com>' or 'Name'."""
+    import json as _json
+    import re as _re
+
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    contacts = []
+    for line in founders_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        m = _re.match(r"^(.*?)[<\s]*([\w.+-]+@[\w-]+\.[\w.-]+)?[>\s]*$", line)
+        name = (m.group(1) if m else line).strip(" <>,-")
+        email = (m.group(2) or "").strip() if m else ""
+        if name or email:
+            contacts.append({"name": name or email, "email": email})
+
+    company.founder_contacts = _json.dumps(contacts, ensure_ascii=False) if contacts else None
+    db.commit()
+    return RedirectResponse(
+        f"/admin/companies/{company_id}?success=Founder+contacts+saved.",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 
