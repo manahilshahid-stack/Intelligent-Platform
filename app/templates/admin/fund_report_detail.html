@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}{{ report.period_label }} – Fund Reports{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<a href="/admin/fund-reports">Fund Reports</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">{{ report.period_label }}</span>
+{% endblock %}
+
+{% block body %}
+<div class="page-content">
+
+  <div class="page-header">
+    <h1>Fund report {{ report.period_label }}</h1>
+    <p class="subtitle">
+      {{ submitted_count }} of {{ total }} company reports received.
+      {% if submitted_count < total %}
+      <span style="color:#dc2626;font-weight:600">{{ total - submitted_count }} still missing.</span>
+      {% endif %}
+    </p>
+  </div>
+
+  {% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
+
+  <div style="display:grid;grid-template-columns:1fr 340px;gap:1.5rem;align-items:start">
+
+    <div class="card">
+      <h2>Company reports for {{ report.period_label }}</h2>
+      <table class="data-table">
+        <thead>
+          <tr><th>Company</th><th>Status</th><th>Report</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for row in company_rows %}
+          <tr>
+            <td style="font-weight:500">
+              <a href="/admin/companies/{{ row.company.id }}" style="text-decoration:none">{{ row.company.name }}</a>
+            </td>
+            <td>
+              {% if row.submitted %}
+              <span class="badge badge-success">Received</span>
+              {% else %}
+              <span class="badge badge-error">Missing</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if row.document %}
+              <a href="/documents/{{ row.document.id }}" class="text-sm">{{ row.document.title|truncate(45) }}</a>
+              {% else %}
+              <span class="text-sm text-muted">—</span>
+              {% endif %}
+            </td>
+            <td style="white-space:nowrap">
+              {% if row.document %}
+              <a href="/documents/{{ row.document.id }}/download" class="btn btn-sm btn-ghost">↓ File</a>
+              {% elif row.company.drive_folder_url %}
+              <a href="{{ row.company.drive_folder_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-ghost">Drive ↗</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Report status</h2>
+      <form method="post" action="/admin/fund-reports/{{ report.id }}/update" novalidate>
+        <div class="field">
+          <label for="status">Stage</label>
+          <select id="status" name="status">
+            {% for s in statuses %}
+            <option value="{{ s }}" {% if report.status.value == s %}selected{% endif %}>
+              {{ {'collecting':'Collecting company reports','drafting':'Drafting condensed report','final':'Final / published'}[s] }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="notes">Notes</label>
+          <textarea id="notes" name="notes" rows="4" placeholder="Progress notes…"
+                    style="width:100%;padding:0.5rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px;font-family:inherit">{{ report.notes or '' }}</textarea>
+        </div>
+        <div class="field">
+          <label for="final_document_id">Final report document ID <span style="color:#9ca3af;font-weight:400">(optional)</span></label>
+          <input id="final_document_id" name="final_document_id" type="number" min="1"
+                 value="{{ report.final_document_id or '' }}"
+                 placeholder="Upload the condensed report first, then link its ID">
+          {% if report.final_document_id %}
+          <div class="text-sm" style="margin-top:0.35rem">
+            <a href="/documents/{{ report.final_document_id }}">View linked document →</a>
+          </div>
+          {% endif %}
+        </div>
+        <button class="btn btn-primary btn-full" type="submit">Save</button>
+      </form>
+      <p class="text-sm text-muted" style="margin-top:0.75rem">
+        Last updated {{ report.updated_at.strftime("%d %b %Y %H:%M") }}
+      </p>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

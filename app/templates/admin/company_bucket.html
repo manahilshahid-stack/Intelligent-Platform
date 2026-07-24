@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}{{ company.name }} – Companies{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<a href="/admin/companies">Companies</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">{{ company.name }}</span>
+{% endblock %}
+
+{% block topbar_actions %}
+<a href="/admin/companies/{{ company.id }}/settings" class="btn btn-ghost btn-sm">⚙ Reporting settings</a>
+{% endblock %}
+
+{% block body %}
+<div class="page-content">
+
+  <div class="page-header">
+    <h1>{{ company.name }}</h1>
+    <p class="subtitle">
+      {{ doc_count }} document{{ 's' if doc_count != 1 else '' }}
+      · slug <code class="slug-code">{{ company.slug }}</code>
+      {% if company.description %} · {{ company.description }}{% endif %}
+    </p>
+  </div>
+
+  {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+  {% if success %}<div class="alert alert-success">{{ success }}</div>{% endif %}
+
+  <div style="display:grid;grid-template-columns:1fr 340px;gap:1.5rem;align-items:start">
+
+    {# ── Left column: reporting status + documents ── #}
+    <div style="display:flex;flex-direction:column;gap:1.5rem">
+
+      {# Reporting completeness #}
+      <div class="card">
+        <h2>Reporting status</h2>
+        {% if has_settings %}
+          {% if tracker_rows %}
+          <table class="data-table">
+            <thead>
+              <tr><th>Period</th><th>Due</th><th>Status</th><th>Document</th></tr>
+            </thead>
+            <tbody>
+              {% for row in tracker_rows %}
+              <tr>
+                <td style="font-weight:500">{{ row.period_label }}</td>
+                <td class="text-sm text-muted">{{ row.due_date.strftime("%d %b %Y") if row.due_date else "—" }}</td>
+                <td>
+                  {% set badge = row.status_badge %}
+                  <span class="badge {{ badge[0] }}">{{ badge[1] }}</span>
+                </td>
+                <td>
+                  {% if row.document %}
+                  <a href="/documents/{{ row.document.id }}" class="text-sm">{{ row.document.title|truncate(40) }}</a>
+                  {% else %}
+                  <span class="text-sm text-muted">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <p class="text-sm text-muted">No tracked periods yet.</p>
+          {% endif %}
+        {% else %}
+        <p class="text-sm text-muted">
+          No reporting schedule configured.
+          <a href="/admin/companies/{{ company.id }}/settings">Set the reporting frequency</a>
+          to track which periods are missing.
+        </p>
+        {% endif %}
+      </div>
+
+      {# Documents grouped by period #}
+      <div class="card">
+        <h2>Documents</h2>
+        {% if grouped_docs %}
+          {% for period, docs in grouped_docs %}
+          <h3 style="margin:1rem 0 0.4rem;font-size:0.8rem;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280">
+            {{ period }}
+          </h3>
+          <table class="data-table">
+            <tbody>
+              {% for d in docs %}
+              <tr>
+                <td>
+                  <a href="/documents/{{ d.id }}" style="font-weight:500;text-decoration:none">{{ d.title }}</a>
+                  <div class="text-sm text-muted">{{ d.filename }} · {{ d.created_at.strftime("%d %b %Y") }}</div>
+                </td>
+                <td class="text-sm text-muted">{{ d.document_category.value.replace('_',' ') }}</td>
+                <td>
+                  {% if d.extraction_status.value in ['complete','extracted'] %}
+                  <span class="badge badge-success">Processed</span>
+                  {% elif d.extraction_status.value == 'failed' %}
+                  <span class="badge badge-error">Failed</span>
+                  {% else %}
+                  <span class="badge badge-info">{{ d.extraction_status.value.replace('_',' ')|capitalize }}</span>
+                  {% endif %}
+                </td>
+                <td style="white-space:nowrap">
+                  <a href="/documents/{{ d.id }}/download" class="btn btn-sm btn-ghost" title="Download original file">↓ File</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% endfor %}
+        {% else %}
+        <p class="text-sm text-muted">No documents yet. Upload the first report →</p>
+        {% endif %}
+      </div>
+
+    </div>
+
+    {# ── Right column: upload + drive + edit ── #}
+    <div style="display:flex;flex-direction:column;gap:1.5rem">
+
+      <div class="card">
+        <h2>Upload report</h2>
+        <form method="post" action="/documents/upload" enctype="multipart/form-data" novalidate>
+          <input type="hidden" name="company_id" value="{{ company.id }}">
+          <input type="hidden" name="redirect_to" value="/admin/companies/{{ company.id }}?success=Document+uploaded.">
+
+          <div class="field">
+            <label for="document_category">Type</label>
+            <select id="document_category" name="document_category" onchange="onCatChange(this.value)">
+              {% for cat in categories %}
+              <option value="{{ cat }}" {% if cat == 'quarterly_reporting' %}selected{% endif %}>
+                {{ cat.replace('_',' ')|capitalize }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="field" id="period-fields">
+            <label>Reporting period</label>
+            <div style="display:flex;gap:0.5rem">
+              <input name="reporting_year" type="number" min="2000" max="2100" placeholder="Year"
+                     value="{{ (now_year if now_year is defined else 2026) }}" style="width:50%">
+              <select name="reporting_quarter" id="quarter-select" style="width:50%">
+                <option value="">Quarter…</option>
+                {% for q in [1,2,3,4] %}<option value="{{ q }}">Q{{ q }}</option>{% endfor %}
+              </select>
+              <select name="reporting_month" id="month-select" style="width:50%;display:none">
+                <option value="">Month…</option>
+                {% for m in ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] %}
+                <option value="{{ loop.index }}">{{ m }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="title">Title</label>
+            <input id="title" name="title" type="text" placeholder="e.g. {{ company.name }} Q2 2026 Report" required>
+          </div>
+
+          <div class="field">
+            <label for="file">File</label>
+            <input id="file" name="file" type="file" accept=".pdf,.docx,.xlsx,.pptx,.txt,.md,.csv" required>
+          </div>
+
+          <button class="btn btn-primary btn-full" type="submit">Upload to {{ company.name }}</button>
+        </form>
+
+        <script>
+        function onCatChange(v) {
+          var isMonthly = v === 'monthly_reporting';
+          var isRegular = isMonthly || v === 'quarterly_reporting';
+          document.getElementById('quarter-select').style.display = (isRegular && !isMonthly) ? '' : 'none';
+          document.getElementById('month-select').style.display = isMonthly ? '' : 'none';
+          document.getElementById('period-fields').style.display = isRegular ? '' : 'none';
+        }
+        </script>
+      </div>
+
+      <div class="card">
+        <h2>Google Drive</h2>
+        {% if company.drive_folder_url %}
+        <p class="text-sm" style="margin-bottom:0.75rem">
+          <a href="{{ company.drive_folder_url }}" target="_blank" rel="noopener">Open linked folder ↗</a>
+        </p>
+        <form method="post" action="/admin/companies/{{ company.id }}/sync-drive">
+          <button class="btn btn-secondary btn-full" type="submit">⟳ Sync new files from Drive</button>
+        </form>
+        <p class="text-sm text-muted" style="margin-top:0.5rem">
+          Pulls new PDFs from the folder and adds them as documents. Requires a Google service account with access to the folder.
+        </p>
+        {% else %}
+        <p class="text-sm text-muted">No Drive folder linked. Add one below to enable sync.</p>
+        {% endif %}
+      </div>
+
+      <div class="card">
+        <h2>Edit company</h2>
+        <form method="post" action="/admin/companies/{{ company.id }}/update" novalidate>
+          <div class="field">
+            <label for="edit_name">Name</label>
+            <input id="edit_name" name="name" type="text" value="{{ company.name }}">
+          </div>
+          <div class="field">
+            <label for="edit_description">Description</label>
+            <input id="edit_description" name="description" type="text" value="{{ company.description or '' }}">
+          </div>
+          <div class="field">
+            <label for="edit_drive">Drive folder URL</label>
+            <input id="edit_drive" name="drive_folder_url" type="url" value="{{ company.drive_folder_url or '' }}"
+                   placeholder="https://drive.google.com/drive/folders/…">
+          </div>
+          <button class="btn btn-secondary btn-full" type="submit">Save changes</button>
+        </form>
+        <hr style="margin:1rem 0;border:none;border-top:1px solid #e5e7eb">
+        <a href="/admin/companies/{{ company.id }}/delete" class="btn btn-danger btn-full">Delete company…</a>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}

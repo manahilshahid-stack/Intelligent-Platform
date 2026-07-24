@@ -112,6 +112,12 @@ class KpiFieldType(str, enum.Enum):
     boolean = "boolean"
 
 
+class FundReportStatus(str, enum.Enum):
+    collecting = "collecting"    # gathering company reports for the period
+    drafting = "drafting"        # condensed fund report being written
+    final = "final"              # condensed report done / published
+
+
 # ---------------------------------------------------------------------------
 # Tables
 # ---------------------------------------------------------------------------
@@ -123,6 +129,8 @@ class Company(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text)
+    # Optional Google Drive folder where this company drops its reports
+    drive_folder_url: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
     users: Mapped[list["User"]] = relationship(back_populates="company")
@@ -412,6 +420,42 @@ class Chunk(Base):
         Index("ix_chunks_approved", "approved"),
         Index("ix_chunks_document_id", "document_id"),
     )
+
+
+class FundReport(Base):
+    """Fund-level condensed report for one period (quarter), built from the
+    portfolio companies' individual reports."""
+    __tablename__ = "fund_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    quarter: Mapped[int] = mapped_column(Integer, nullable=False)  # 1-4
+    status: Mapped[FundReportStatus] = mapped_column(
+        Enum(FundReportStatus, name="fundreportstatus"),
+        nullable=False,
+        default=FundReportStatus.collecting,
+    )
+    notes: Mapped[str | None] = mapped_column(Text)
+    # The final condensed report, uploaded as a normal Document (company-less docs
+    # are not supported, so this points at any Document — typically uploaded under
+    # a "Fund" company or attached directly here as bytes).
+    final_document_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("documents.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+    final_document: Mapped["Document | None"] = relationship()
+
+    __table_args__ = (
+        Index("ix_fund_reports_period", "year", "quarter", unique=True),
+    )
+
+    @property
+    def period_label(self) -> str:
+        return f"{self.year}-Q{self.quarter}"
 
 
 class CompanyReportingSettings(Base):

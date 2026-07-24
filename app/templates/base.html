@@ -423,6 +423,25 @@ textarea { resize: vertical; line-height: 1.55; }
 
     <nav class="sidebar-nav">
 
+      {% if user is defined and user and user.role.value == "admin" %}
+      <div class="nav-section-label">Portfolio</div>
+
+      <a href="/admin/reporting-tracker" class="nav-item {% if '/admin/reporting-tracker' in request.url.path %}active{% endif %}">
+        <span class="nav-icon">📊</span>
+        <span class="nav-label">Tracker</span>
+      </a>
+
+      <a href="/admin/companies" class="nav-item {% if '/admin/companies' in request.url.path %}active{% endif %}">
+        <span class="nav-icon">🏢</span>
+        <span class="nav-label">Companies</span>
+      </a>
+
+      <a href="/admin/fund-reports" class="nav-item {% if '/admin/fund-reports' in request.url.path %}active{% endif %}">
+        <span class="nav-icon">📑</span>
+        <span class="nav-label">Fund reports</span>
+      </a>
+      {% endif %}
+
       <div class="nav-section-label">Main</div>
 
       <a href="/dashboard" class="nav-item {% if request.url.path == '/dashboard' %}active{% endif %}">
@@ -448,19 +467,9 @@ textarea { resize: vertical; line-height: 1.55; }
         <span class="nav-label">Overview</span>
       </a>
 
-      <a href="/admin/companies" class="nav-item {% if '/admin/companies' in request.url.path %}active{% endif %}">
-        <span class="nav-icon">🏢</span>
-        <span class="nav-label">Companies</span>
-      </a>
-
       <a href="/admin/users" class="nav-item {% if '/admin/users' in request.url.path %}active{% endif %}">
         <span class="nav-icon">👥</span>
         <span class="nav-label">Users</span>
-      </a>
-
-      <a href="/admin/reporting-tracker" class="nav-item {% if '/admin/reporting-tracker' in request.url.path %}active{% endif %}">
-        <span class="nav-icon">📊</span>
-        <span class="nav-label">Reporting tracker</span>
       </a>
 
       <a href="/admin/review" class="nav-item {% if '/admin/review' in request.url.path %}active{% endif %}">
@@ -472,7 +481,7 @@ textarea { resize: vertical; line-height: 1.55; }
       </a>
 
       <a href="/admin/crm/ventures" class="nav-item {% if '/admin/crm' in request.url.path %}active{% endif %}">
-        <span class="nav-icon">🏢</span>
+        <span class="nav-icon">🗂</span>
         <span class="nav-label">CRM Ventures</span>
       </a>
 

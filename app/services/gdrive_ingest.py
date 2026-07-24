@@ -559,3 +559,194 @@ def poll_drive_changes(db) -> dict:
     _save_drive_token(db, new_token)
     log.info("poll_drive_changes: %s", summary)
     return summary
+
+
+# ---------------------------------------------------------------------------
+# Company bucket folder sync (admin portal)
+# ---------------------------------------------------------------------------
+
+_FOLDER_ID_RE = re.compile(r"drive\.google\.com/drive/(?:u/\d+/)?folders/([\w-]+)", re.I)
+
+# Filename patterns that indicate a quarterly reporting period
+_PERIOD_PATTERNS = [
+    re.compile(r"Q([1-4])[\s._'-]*(?:20)?(\d{2})", re.I),        # Q1 2026 / Q1'26 / Q1-26
+    re.compile(r"(?:20)(\d{2})[\s._'-]*Q([1-4])", re.I),         # 2026 Q1 / 2026-Q1
+]
+
+_SYNC_EXTENSIONS = {"pdf", "docx", "xlsx", "pptx", "txt", "md", "csv"}
+
+
+def _guess_quarter_period(filename: str) -> tuple[int, int] | None:
+    """Return (year, quarter) if the filename looks like a quarterly report."""
+    m = _PERIOD_PATTERNS[0].search(filename)
+    if m:
+        return 2000 + int(m.group(2)), int(m.group(1))
+    m = _PERIOD_PATTERNS[1].search(filename)
+    if m:
+        return 2000 + int(m.group(1)), int(m.group(2))
+    return None
+
+
+def sync_company_drive_folder(company, db, uploaded_by_id: int) -> dict:
+    """
+    Pull new files from the company's linked Drive folder into its document bucket.
+
+    - Lists files in the folder via the Drive API (service account required).
+    - Skips files already present (same sha256 for this company).
+    - Extracts text through the normal pipeline; keeps the original bytes.
+    - Quarterly period is guessed from the filename (e.g. "Acme Q1 2026.pdf").
+
+    Returns {"status": ..., "added": n, "skipped": n, "failed": n, "message": str}.
+    """
+    from sqlalchemy import select as _select
+    from ..models import (
+        Document, DocumentCategory, ExtractionStatus, ReviewStatus, UploadStatus,
+    )
+    from .extraction_service import extract_text
+
+    if not company.drive_folder_url:
+        return {"status": "error", "message": "No Drive folder linked."}
+
+    m = _FOLDER_ID_RE.search(company.drive_folder_url)
+    if not m:
+        return {"status": "error", "message": "Could not parse the Drive folder URL."}
+    folder_id = m.group(1)
+
+    token = _service_account_token(db)
+    if not token:
+        return {
+            "status": "error",
+            "message": (
+                "Google service account is not configured. Set "
+                "GOOGLE_SERVICE_ACCOUNT_JSON and share the folder with the "
+                "service-account email."
+            ),
+        }
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # List folder contents (paged)
+    files: list[dict] = []
+    page_token = None
+    try:
+        while True:
+            params = {
+                "q": f"'{folder_id}' in parents and trashed=false",
+                "fields": "nextPageToken,files(id,name,mimeType,size)",
+                "pageSize": 100,
+                "supportsAllDrives": "true",
+                "includeItemsFromAllDrives": "true",
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            r = httpx.get(
+                "https://www.googleapis.com/drive/v3/files",
+                params=params, headers=headers, timeout=_TIMEOUT,
+            )
+            if r.status_code in (401, 403, 404):
+                return {"status": "error",
+                        "message": "No access to the folder — share it with the service-account email."}
+            r.raise_for_status()
+            data = r.json()
+            files.extend(data.get("files", []))
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
+    except Exception as exc:
+        log.warning("drive folder sync: listing failed (%s)", exc)
+        return {"status": "error", "message": f"Drive listing failed: {exc}"}
+
+    # Existing hashes for dedupe
+    existing_hashes = set(
+        db.scalars(
+            _select(Document.sha256).where(
+                Document.company_id == company.id, Document.sha256.is_not(None)
+            )
+        ).all()
+    )
+
+    added = skipped = failed = 0
+    for f in files:
+        name = f.get("name", "")
+        ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+        if ext not in _SYNC_EXTENSIONS:
+            skipped += 1
+            continue
+        try:
+            r = httpx.get(
+                f"https://www.googleapis.com/drive/v3/files/{f['id']}",
+                params={"alt": "media", "supportsAllDrives": "true"},
+                headers=headers, follow_redirects=True, timeout=_TIMEOUT,
+            )
+            if r.status_code != 200:
+                failed += 1
+                continue
+            data = r.content
+            digest = hashlib.sha256(data).hexdigest()
+            if digest in existing_hashes:
+                skipped += 1
+                continue
+
+            raw_text = None
+            extraction_status = ExtractionStatus.complete
+            extraction_error = None
+            try:
+                raw_text = extract_text(name, data)
+            except Exception as exc:
+                extraction_status = ExtractionStatus.failed
+                extraction_error = str(exc)
+            if raw_text is not None and len(raw_text.strip()) < 20:
+                extraction_status = ExtractionStatus.failed
+                extraction_error = "No usable text extracted."
+
+            period = _guess_quarter_period(name)
+            doc = Document(
+                company_id=company.id,
+                uploaded_by_id=uploaded_by_id,
+                title=name.rsplit(".", 1)[0],
+                filename=name[:256],
+                file_type=ext,
+                file_size=len(data),
+                sha256=digest,
+                file_bytes=data,
+                raw_text=raw_text,
+                upload_status=UploadStatus.uploaded,
+                extraction_status=extraction_status,
+                extraction_error=extraction_error,
+                review_status=ReviewStatus.pending,
+                document_category=(
+                    DocumentCategory.quarterly_reporting if period
+                    else DocumentCategory.other
+                ),
+                is_regular_reporting=bool(period),
+                reporting_period=f"{period[0]}-Q{period[1]}" if period else None,
+                reporting_year=period[0] if period else None,
+                reporting_quarter=period[1] if period else None,
+            )
+            db.add(doc)
+            db.commit()
+            existing_hashes.add(digest)
+            added += 1
+
+            # Same post-upload pipeline as manual uploads (best-effort):
+            # LLM KPI extraction + full-text embedding for portfolio chat.
+            if extraction_status == ExtractionStatus.complete and raw_text:
+                try:
+                    from .portfolio_extraction import run_portfolio_extraction
+                    run_portfolio_extraction(doc.id, db)
+                except Exception as exc:
+                    log.warning("drive sync: extraction failed for doc %d (%s)", doc.id, exc)
+                try:
+                    from .embeddings import embed_document_raw_text
+                    embed_document_raw_text(doc.id, db)
+                except Exception as exc:
+                    log.warning("drive sync: raw-text embedding failed for doc %d (%s)", doc.id, exc)
+        except Exception as exc:
+            db.rollback()
+            log.warning("drive folder sync: %s failed (%s)", name[:60], exc)
+            failed += 1
+
+    return {
+        "status": "ok",
+        "added": added, "skipped": skipped, "failed": failed,
+        "message": f"Sync complete: {added} added, {skipped} skipped, {failed} failed.",
+    }

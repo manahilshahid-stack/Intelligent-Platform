@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -123,3 +123,172 @@ def company_reporting(
         "irregular_docs": irregular_docs,
         "error": None,
     })
+
+
+# ---------------------------------------------------------------------------
+# Fund reports: the condensed quarterly report built from all company reports
+# ---------------------------------------------------------------------------
+
+def _quarter_submissions(db: Session, year: int, quarter: int) -> tuple[set[int], dict[int, "Document"]]:
+    """Company ids that submitted a quarterly report for the period, + their docs."""
+    from ..models import Document, DocumentCategory
+    docs = db.scalars(
+        select(Document).where(
+            Document.is_regular_reporting == True,  # noqa: E712
+            Document.document_category == DocumentCategory.quarterly_reporting,
+            Document.reporting_year == year,
+            Document.reporting_quarter == quarter,
+        )
+    ).all()
+    by_company: dict[int, Document] = {}
+    for d in docs:
+        by_company.setdefault(d.company_id, d)
+    return set(by_company), by_company
+
+
+@router.get("/admin/fund-reports", response_class=HTMLResponse)
+def fund_reports_list(
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    error: str | None = None,
+):
+    from datetime import date
+    from ..models import FundReport
+
+    reports = list(db.scalars(
+        select(FundReport).order_by(FundReport.year.desc(), FundReport.quarter.desc())
+    ).all())
+    companies = list(db.scalars(select(Company).order_by(Company.name)).all())
+    total_companies = len(companies)
+
+    rows = []
+    for r in reports:
+        submitted, _ = _quarter_submissions(db, r.year, r.quarter)
+        rows.append({
+            "report": r,
+            "submitted_count": len(submitted),
+            "total": total_companies,
+        })
+
+    today = date.today()
+    current_q = (today.month - 1) // 3 + 1
+
+    return _render(request, "admin/fund_reports.html", {
+        "user": admin,
+        "rows": rows,
+        "error": error,
+        "default_year": today.year,
+        "default_quarter": current_q,
+    })
+
+
+@router.post("/admin/fund-reports", response_class=HTMLResponse)
+def fund_report_create(
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    year: int = Form(...),
+    quarter: int = Form(...),
+):
+    from fastapi.responses import RedirectResponse
+    from fastapi import status as _status
+    from ..models import FundReport
+
+    if not (1 <= quarter <= 4) or not (2000 <= year <= 2100):
+        return RedirectResponse(
+            "/admin/fund-reports?error=Invalid+period.", status_code=_status.HTTP_303_SEE_OTHER
+        )
+    existing = db.scalar(
+        select(FundReport).where(FundReport.year == year, FundReport.quarter == quarter)
+    )
+    if existing:
+        return RedirectResponse(
+            f"/admin/fund-reports/{existing.id}", status_code=_status.HTTP_303_SEE_OTHER
+        )
+    report = FundReport(year=year, quarter=quarter)
+    db.add(report)
+    db.commit()
+    return RedirectResponse(
+        f"/admin/fund-reports/{report.id}", status_code=_status.HTTP_303_SEE_OTHER
+    )
+
+
+@router.get("/admin/fund-reports/{report_id}", response_class=HTMLResponse)
+def fund_report_detail(
+    report_id: int,
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    success: str | None = None,
+):
+    from fastapi import HTTPException
+    from ..models import FundReport, FundReportStatus
+
+    report = db.get(FundReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Fund report not found.")
+
+    companies = list(db.scalars(select(Company).order_by(Company.name)).all())
+    submitted_ids, docs_by_company = _quarter_submissions(db, report.year, report.quarter)
+
+    company_rows = [
+        {
+            "company": c,
+            "submitted": c.id in submitted_ids,
+            "document": docs_by_company.get(c.id),
+        }
+        for c in companies
+    ]
+
+    return _render(request, "admin/fund_report_detail.html", {
+        "user": admin,
+        "report": report,
+        "company_rows": company_rows,
+        "submitted_count": len(submitted_ids),
+        "total": len(companies),
+        "statuses": [s.value for s in FundReportStatus],
+        "success": success,
+    })
+
+
+@router.post("/admin/fund-reports/{report_id}/update", response_class=HTMLResponse)
+def fund_report_update(
+    report_id: int,
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    status: str = Form(""),
+    notes: str = Form(""),
+    final_document_id: str = Form(""),
+):
+    from fastapi import HTTPException
+    from fastapi import status as _status
+    from fastapi.responses import RedirectResponse
+    from ..models import Document, FundReport, FundReportStatus
+
+    report = db.get(FundReport, report_id)
+    if not report:
+        raise HTTPException(status_code=404, detail="Fund report not found.")
+
+    if status:
+        try:
+            report.status = FundReportStatus(status)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid status: {status!r}")
+    report.notes = notes.strip() or None
+    if final_document_id.strip():
+        try:
+            doc_id = int(final_document_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid document id.")
+        if not db.get(Document, doc_id):
+            raise HTTPException(status_code=400, detail="Document not found.")
+        report.final_document_id = doc_id
+    else:
+        report.final_document_id = None
+    db.commit()
+    return RedirectResponse(
+        f"/admin/fund-reports/{report_id}?success=Saved.",
+        status_code=_status.HTTP_303_SEE_OTHER,
+    )

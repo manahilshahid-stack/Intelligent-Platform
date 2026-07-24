@@ -73,16 +73,47 @@ def admin_home(
 # Companies
 # ---------------------------------------------------------------------------
 
+def _companies_overview(db: Session) -> list[dict]:
+    """Companies with doc counts + latest report period, for the buckets list."""
+    from sqlalchemy import func
+    from ..models import DocumentCategory
+
+    companies = db.scalars(select(Company).order_by(Company.name)).all()
+    doc_counts = dict(
+        db.execute(
+            select(Document.company_id, func.count(Document.id))
+            .group_by(Document.company_id)
+        ).all()
+    )
+    # Latest regular-reporting doc per company
+    latest_reports: dict[int, Document] = {}
+    for doc in db.scalars(
+        select(Document)
+        .where(Document.is_regular_reporting == True)  # noqa: E712
+        .order_by(Document.reporting_year, Document.reporting_quarter,
+                  Document.reporting_month)
+    ):
+        latest_reports[doc.company_id] = doc  # last write wins = latest period
+
+    return [
+        {
+            "company": c,
+            "doc_count": doc_counts.get(c.id, 0),
+            "latest_report": latest_reports.get(c.id),
+        }
+        for c in companies
+    ]
+
+
 @router.get("/companies", response_class=HTMLResponse)
 def companies_page(
     request: Request,
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    companies = db.scalars(select(Company).order_by(Company.name)).all()
     return _render(request, "admin/companies.html", {
         "user": admin,
-        "companies": companies,
+        "rows": _companies_overview(db),
         "error": None,
     })
 
@@ -94,15 +125,16 @@ def create_company(
     db: Annotated[Session, Depends(get_db)],
     name: Annotated[str, Form()] = "",
     description: Annotated[str, Form()] = "",
+    drive_folder_url: Annotated[str, Form()] = "",
 ):
     name = name.strip()
     description = description.strip()
+    drive_folder_url = drive_folder_url.strip()
 
     if not name:
-        companies = db.scalars(select(Company).order_by(Company.name)).all()
         return _render(request, "admin/companies.html", {
             "user": admin,
-            "companies": companies,
+            "rows": _companies_overview(db),
             "error": "Company name is required.",
         }, 400)
 
@@ -111,10 +143,127 @@ def create_company(
         name=name,
         slug=slug,
         description=description or None,
+        drive_folder_url=drive_folder_url or None,
     )
     db.add(company)
     db.commit()
-    return RedirectResponse("/admin/companies", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(f"/admin/companies/{company.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+# ---------------------------------------------------------------------------
+# Company bucket (detail) page
+# ---------------------------------------------------------------------------
+
+@router.get("/companies/{company_id}", response_class=HTMLResponse)
+def company_bucket(
+    company_id: int,
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    error: str | None = None,
+    success: str | None = None,
+):
+    from ..models import CompanyReportingSettings, DocumentCategory
+    from ..services.reporting_service import build_rows_for_company, get_irregular_docs
+
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    docs = list(db.scalars(
+        select(Document)
+        .where(Document.company_id == company_id)
+        .order_by(
+            Document.reporting_year.desc().nulls_last(),
+            Document.reporting_quarter.desc().nulls_last(),
+            Document.reporting_month.desc().nulls_last(),
+            Document.created_at.desc(),
+        )
+    ).all())
+
+    # Group: regular reporting docs by period label, the rest under "Other documents"
+    groups: dict[str, list[Document]] = {}
+    for d in docs:
+        if d.is_regular_reporting and d.reporting_period:
+            key = d.reporting_period
+        else:
+            key = "Other documents"
+        groups.setdefault(key, []).append(d)
+    # Keep "Other documents" last
+    other = groups.pop("Other documents", None)
+    grouped = list(groups.items())
+    if other:
+        grouped.append(("Other documents", other))
+
+    # Reporting completeness (uses per-company reporting settings if present)
+    settings = db.scalar(
+        select(CompanyReportingSettings)
+        .where(CompanyReportingSettings.company_id == company_id)
+    )
+    tracker_rows = build_rows_for_company(company, settings, db) if settings else []
+
+    from datetime import date as _date
+    return _render(request, "admin/company_bucket.html", {
+        "user": admin,
+        "now_year": _date.today().year,
+        "company": company,
+        "grouped_docs": grouped,
+        "doc_count": len(docs),
+        "tracker_rows": tracker_rows,
+        "has_settings": settings is not None,
+        "categories": [c.value for c in DocumentCategory],
+        "error": error,
+        "success": success,
+    })
+
+
+@router.post("/companies/{company_id}/sync-drive", response_class=HTMLResponse)
+def sync_company_drive(
+    company_id: int,
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    from urllib.parse import quote
+    from ..services.gdrive_ingest import sync_company_drive_folder
+
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    result = sync_company_drive_folder(company, db, uploaded_by_id=admin.id)
+    param = "success" if result.get("status") == "ok" else "error"
+    return RedirectResponse(
+        f"/admin/companies/{company_id}?{param}={quote(result.get('message', ''))}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/companies/{company_id}/update", response_class=HTMLResponse)
+def update_company(
+    company_id: int,
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    name: Annotated[str, Form()] = "",
+    description: Annotated[str, Form()] = "",
+    drive_folder_url: Annotated[str, Form()] = "",
+):
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    name = name.strip()
+    if name and name != company.name:
+        company.name = name
+        company.slug = _unique_slug(_slugify(name), db, exclude_id=company_id)
+    company.description = description.strip() or None
+    company.drive_folder_url = drive_folder_url.strip() or None
+    db.commit()
+    return RedirectResponse(
+        f"/admin/companies/{company_id}?success=Company+updated.",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Fund Reports – Admin{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">Fund Reports</span>
+{% endblock %}
+
+{% block body %}
+<div class="page-content">
+
+  <div class="page-header">
+    <h1>Fund reports</h1>
+    <p class="subtitle">One condensed report per quarter, built from the portfolio companies' reports.</p>
+  </div>
+
+  {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+  <div style="display:grid;grid-template-columns:1fr 340px;gap:1.5rem;align-items:start">
+
+    <div class="card">
+      <h2>All periods ({{ rows|length }})</h2>
+      {% if rows %}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th>Company reports in</th>
+            <th>Status</th>
+            <th>Final report</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          {% set fr = r.report %}
+          <tr>
+            <td style="font-weight:600">{{ fr.period_label }}</td>
+            <td>
+              <span class="badge {{ 'badge-success' if r.submitted_count == r.total else 'badge-warn' }}">
+                {{ r.submitted_count }} / {{ r.total }}
+              </span>
+            </td>
+            <td>
+              {% if fr.status.value == 'final' %}
+              <span class="badge badge-success">Final</span>
+              {% elif fr.status.value == 'drafting' %}
+              <span class="badge badge-warn">Drafting</span>
+              {% else %}
+              <span class="badge badge-info">Collecting</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if fr.final_document_id %}
+              <a href="/documents/{{ fr.final_document_id }}" class="text-sm">View →</a>
+              {% else %}
+              <span class="text-sm text-muted">—</span>
+              {% endif %}
+            </td>
+            <td style="white-space:nowrap">
+              <a href="/admin/fund-reports/{{ fr.id }}" class="btn btn-sm btn-ghost">Open →</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="text-sm text-muted" style="margin-top:0.5rem">No fund reports yet. Start one for the current quarter →</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Start a period</h2>
+      <form method="post" action="/admin/fund-reports" novalidate>
+        <div class="field">
+          <label>Period</label>
+          <div style="display:flex;gap:0.5rem">
+            <input name="year" type="number" min="2000" max="2100" value="{{ default_year }}" style="width:50%">
+            <select name="quarter" style="width:50%">
+              {% for q in [1,2,3,4] %}
+              <option value="{{ q }}" {% if q == default_quarter %}selected{% endif %}>Q{{ q }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full" type="submit">Start tracking this quarter</button>
+      </form>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

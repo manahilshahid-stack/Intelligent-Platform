@@ -503,3 +503,86 @@ def embed_approved_extraction(extraction_id: int, db: "Session") -> int:
 
     log.info("Stored %d embedded chunk(s) for extraction %d", stored, extraction_id)
     return stored
+
+
+# ---------------------------------------------------------------------------
+# 5. embed_document_raw_text — index the full report text for chat retrieval
+# ---------------------------------------------------------------------------
+
+def embed_document_raw_text(document_id: int, db: "Session") -> int:
+    """
+    Chunk + embed a document's full raw text into the chunks table
+    (chunk_type=text, approved=True) so portfolio chats can retrieve the
+    report's narrative — not just the reviewed KPI extraction.
+
+    Replaces any existing raw-text chunks for the document (idempotent).
+    Returns the number of chunks stored. Raises ValueError when the document,
+    its text, or the API key is missing.
+    """
+    from sqlalchemy import select
+
+    from ..models import Chunk, ChunkType, Company, Document
+    from .settings_service import get_openrouter_api_key
+
+    doc = db.get(Document, document_id)
+    if not doc:
+        raise ValueError(f"Document {document_id} not found.")
+    raw = (doc.raw_text or "").strip()
+    if len(raw) < 20:
+        raise ValueError(f"Document {document_id} has no usable raw text.")
+
+    api_key = get_openrouter_api_key(db)
+    if not api_key:
+        raise ValueError("OpenRouter API key is not configured.")
+
+    company = db.get(Company, doc.company_id)
+
+    # Context header so each chunk is self-describing in retrieval
+    header_bits = [company.name if company else None,
+                   doc.document_category.value.replace("_", " ") if doc.document_category else None,
+                   doc.reporting_period,
+                   doc.title]
+    header = " — ".join(b for b in header_bits if b)
+
+    # Replace existing raw-text chunks for this document
+    existing = db.scalars(
+        select(Chunk).where(
+            Chunk.document_id == document_id,
+            Chunk.chunk_type == ChunkType.text,
+        )
+    ).all()
+    for chunk in existing:
+        db.delete(chunk)
+    db.flush()
+
+    texts = [f"[{header}]\n{t}" for t in chunk_text(raw)]
+    if not texts:
+        raise ValueError(f"Document {document_id}: chunking produced no text.")
+
+    vectors = embed_texts(texts, api_key)
+
+    created: list[tuple[object, list[float]]] = []
+    for text, vector in zip(texts, vectors):
+        chunk = Chunk(
+            document_id=document_id,
+            extraction_id=None,
+            company_id=doc.company_id,
+            chunk_type=ChunkType.text,
+            text=text,
+            embedding=json.dumps(vector),
+            approved=True,
+        )
+        db.add(chunk)
+        created.append((chunk, vector))
+
+    db.commit()
+
+    try:
+        from .vector_store import set_row_vector
+        for chunk, vector in created:
+            set_row_vector(db, "chunks", chunk.id, vector)
+    except Exception as exc:
+        log.warning("embed_document_raw_text: pgvector sync skipped: %s", exc)
+
+    log.info("Stored %d raw-text chunk(s) for document %d", len(created), document_id)
+    return len(created)

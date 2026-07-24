@@ -101,6 +101,7 @@ _ENUMS: dict[str, list[str]] = {
     "crmsyncstatus": ["running", "success", "failed"],
     "crmfilestatus": ["pending", "text_extracted", "unsupported", "failed"],
     "externaldocstatus": ["pending", "fetched", "no_access", "unsupported", "failed"],
+    "fundreportstatus": ["collecting", "drafting", "final"],
 }
 
 
@@ -172,6 +173,8 @@ _COLUMN_ADDITIONS: list[tuple[str, str, str]] = [
     ("documents", "reporting_year", "INTEGER"),
     ("documents", "reporting_month", "INTEGER"),
     ("documents", "reporting_quarter", "INTEGER"),
+    # companies — optional linked Google Drive folder
+    ("companies", "drive_folder_url", "TEXT"),
 ]
 
 
@@ -194,6 +197,8 @@ def _ensure_columns(conn) -> None:
     # create_all. ADD COLUMN of a nullable TEXT is safe on both engines.
     if _table_exists(conn, "knowledge_chunks"):
         _add_column_if_missing(conn, "knowledge_chunks", "sanitized_text", "TEXT")
+    if _table_exists(conn, "companies"):
+        _add_column_if_missing(conn, "companies", "drive_folder_url", "TEXT")
 
     # Column back-fills below use Postgres-specific DDL (BYTEA, enum FK types).
     # On SQLite (local dev), create_all already creates the full schema, so

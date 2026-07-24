@@ -6,7 +6,7 @@ import logging
 from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -251,7 +251,7 @@ async def bulk_upload_post(
             file_type=ext_str,
             file_size=len(data),
             sha256=digest,
-            file_bytes=data if raw_text is None else None,
+            file_bytes=data,  # keep original file so it can be downloaded/linked later
             raw_text=raw_text,
             upload_status=UploadStatus.uploaded,
             extraction_status=extraction_status,
@@ -278,6 +278,12 @@ async def bulk_upload_post(
                     run_portfolio_extraction(doc.id, db)
                 except Exception:
                     pass
+                # Index full report text for portfolio chat retrieval (best-effort)
+                try:
+                    from ..services.embeddings import embed_document_raw_text
+                    embed_document_raw_text(doc.id, db)
+                except Exception as exc:
+                    log.warning("raw-text embedding failed for document %d: %s", doc.id, exc)
 
         results.append({"index": i, "filename": filename, "ok": True, "doc_id": doc.id, "title": title})
 
@@ -367,6 +373,7 @@ async def upload_document(
     reporting_year: Annotated[str, Form()] = "",
     reporting_month: Annotated[str, Form()] = "",
     reporting_quarter: Annotated[str, Form()] = "",
+    redirect_to: Annotated[str, Form()] = "",
 ):
     companies = _companies_for_user(current_user, db)
 
@@ -514,7 +521,7 @@ async def upload_document(
         file_type=ext,
         file_size=len(data),
         sha256=digest,
-        file_bytes=data if raw_text is None else None,
+        file_bytes=data,  # keep original file so it can be downloaded/linked later
         raw_text=raw_text,
         upload_status=UploadStatus.uploaded,
         extraction_status=extraction_status,
@@ -551,7 +558,16 @@ async def upload_document(
             except Exception as exc:
                 log.warning("LLM extraction failed for document %d: %s", doc.id, exc)
                 # run_portfolio_extraction already updated doc status to failed
+            # Index full report text for portfolio chat retrieval (best-effort)
+            try:
+                from ..services.embeddings import embed_document_raw_text
+                embed_document_raw_text(doc.id, db)
+            except Exception as exc:
+                log.warning("raw-text embedding failed for document %d: %s", doc.id, exc)
 
+    # Optional caller-provided return location (must be a local path)
+    if redirect_to.startswith("/"):
+        return RedirectResponse(redirect_to, status_code=status.HTTP_303_SEE_OTHER)
     return RedirectResponse(f"/documents/{doc.id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -605,6 +621,46 @@ def document_detail(
         "reviewed_by": reviewed_by,
         "chunk_count": chunk_count,
     })
+
+
+# ---------------------------------------------------------------------------
+# Download original file
+# ---------------------------------------------------------------------------
+
+_MIME_BY_EXT = {
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "txt": "text/plain",
+    "md": "text/markdown",
+    "csv": "text/csv",
+}
+
+
+@router.get("/documents/{document_id}/download")
+def download_document(
+    document_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(require_login)],
+):
+    doc = db.get(Document, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    if not user_can_access_company(current_user, doc.company_id):
+        raise HTTPException(status_code=403, detail="Access denied.")
+    data = doc.file_bytes
+    if not data:
+        raise HTTPException(
+            status_code=404,
+            detail="Original file is not stored for this document (uploaded before originals were kept).",
+        )
+    mime = _MIME_BY_EXT.get((doc.file_type or "").lower(), "application/octet-stream")
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Content-Disposition": f'attachment; filename="{doc.filename}"'},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -685,13 +741,20 @@ def re_embed_document(
         .order_by(Extraction.created_at.desc())
         .limit(1)
     )
-    if not extraction:
-        raise HTTPException(status_code=400, detail="No approved extraction to embed.")
 
-    from ..services.embeddings import embed_approved_extraction
+    from ..services.embeddings import embed_approved_extraction, embed_document_raw_text
+
+    # Re-embed the approved KPI extraction, if any
+    if extraction:
+        try:
+            embed_approved_extraction(extraction.id, db)
+        except (ValueError, RuntimeError) as exc:
+            log.warning("Re-embed failed for document %d: %s", document_id, exc)
+
+    # Re-index the full report text for portfolio chat retrieval
     try:
-        embed_approved_extraction(extraction.id, db)
+        embed_document_raw_text(document_id, db)
     except (ValueError, RuntimeError) as exc:
-        log.warning("Re-embed failed for document %d: %s", document_id, exc)
+        log.warning("Raw-text re-embed failed for document %d: %s", document_id, exc)
 
     return RedirectResponse(f"/documents/{document_id}", status_code=status.HTTP_303_SEE_OTHER)

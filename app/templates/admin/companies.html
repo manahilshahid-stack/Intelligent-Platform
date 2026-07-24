@@ -11,7 +11,8 @@
 <div class="page-content">
 
   <div class="page-header">
-    <h1>Companies</h1>
+    <h1>Portfolio companies</h1>
+    <p class="subtitle">Each company is a bucket: its reports, documents, and reporting status live inside.</p>
   </div>
 
   {% if error %}
@@ -21,29 +22,44 @@
   <div style="display:grid;grid-template-columns:1fr 340px;gap:1.5rem;align-items:start">
 
     <div class="card">
-      <h2>All companies ({{ companies|length }})</h2>
+      <h2>All companies ({{ rows|length }})</h2>
 
-      {% if companies %}
+      {% if rows %}
       <table class="data-table">
         <thead>
           <tr>
-            <th>Name</th>
-            <th>Slug</th>
-            <th>Description</th>
-            <th>Created</th>
+            <th>Company</th>
+            <th>Documents</th>
+            <th>Latest report</th>
+            <th>Drive folder</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          {% for c in companies %}
+          {% for r in rows %}
+          {% set c = r.company %}
           <tr>
-            <td style="font-weight:500">{{ c.name }}</td>
-            <td><code class="slug-code">{{ c.slug }}</code></td>
-            <td class="text-sm text-muted">{{ c.description or "—" }}</td>
-            <td class="text-sm text-muted">{{ c.created_at.strftime("%d %b %Y") }}</td>
+            <td>
+              <a href="/admin/companies/{{ c.id }}" style="font-weight:600;text-decoration:none">{{ c.name }}</a>
+              {% if c.description %}<div class="text-sm text-muted">{{ c.description|truncate(60) }}</div>{% endif %}
+            </td>
+            <td>{{ r.doc_count }}</td>
+            <td>
+              {% if r.latest_report %}
+              <span class="badge badge-info">{{ r.latest_report.reporting_period }}</span>
+              {% else %}
+              <span class="badge badge-error">None</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if c.drive_folder_url %}
+              <a href="{{ c.drive_folder_url }}" target="_blank" rel="noopener" class="text-sm">Linked ↗</a>
+              {% else %}
+              <span class="text-sm text-muted">—</span>
+              {% endif %}
+            </td>
             <td style="white-space:nowrap">
-              <a href="/admin/companies/{{ c.id }}/settings" class="btn btn-sm btn-ghost">⚙ Settings</a>
-              <a href="/admin/companies/{{ c.id }}/delete" class="btn btn-sm btn-danger" style="margin-left:0.35rem">Delete</a>
+              <a href="/admin/companies/{{ c.id }}" class="btn btn-sm btn-ghost">Open bucket →</a>
             </td>
           </tr>
           {% endfor %}
@@ -59,12 +75,17 @@
       <form method="post" action="/admin/companies" novalidate>
         <div class="field">
           <label for="name">Company name <span style="color:#dc2626">*</span></label>
-          <input id="name" name="name" type="text" placeholder="Acme Capital" required autofocus>
+          <input id="name" name="name" type="text" placeholder="Acme GmbH" required autofocus>
           <div class="text-sm text-muted" style="margin-top:0.35rem">Slug is auto-generated from the name.</div>
         </div>
         <div class="field">
           <label for="description">Description <span style="color:#9ca3af;font-weight:400">(optional)</span></label>
           <input id="description" name="description" type="text" placeholder="Short description…">
+        </div>
+        <div class="field">
+          <label for="drive_folder_url">Google Drive folder <span style="color:#9ca3af;font-weight:400">(optional)</span></label>
+          <input id="drive_folder_url" name="drive_folder_url" type="url" placeholder="https://drive.google.com/drive/folders/…">
+          <div class="text-sm text-muted" style="margin-top:0.35rem">Where this company drops its reports. Enables Drive sync.</div>
         </div>
         <button class="btn btn-primary btn-full" type="submit">Create company</button>
       </form>
