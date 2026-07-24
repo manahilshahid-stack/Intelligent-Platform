@@ -208,8 +208,11 @@
           </div>
           <button class="btn btn-secondary btn-full" type="submit">Save founders</button>
         </form>
+        <form method="post" action="/admin/companies/{{ company.id }}/refresh-founders" style="margin-top:0.5rem">
+          <button class="btn btn-ghost btn-full" type="submit">⟳ Auto-fill from Attio</button>
+        </form>
         <p class="text-sm text-muted" style="margin-top:0.5rem">
-          Names are prefilled from Attio where possible; add emails so quarterly reminders reach them.
+          Auto-fill pulls founder names and emails from the people linked to this company in Attio; you can edit the list above.
         </p>
       </div>
 

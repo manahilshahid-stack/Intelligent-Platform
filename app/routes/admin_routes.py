@@ -275,6 +275,77 @@ def sync_company_drive(
     )
 
 
+@router.post("/companies/import-from-crm", response_class=HTMLResponse)
+def import_companies_from_crm(
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Create a portal company for every Attio portfolio venture (stage=Portfolio)
+    that doesn't exist yet, and auto-fill founder contacts from Attio."""
+    from urllib.parse import quote
+    from ..models import CrmVenture
+    from ..services.reminder_service import refresh_founders_from_attio
+
+    ventures = db.scalars(
+        select(CrmVenture).where(CrmVenture.stage.ilike("portfolio"))
+        .order_by(CrmVenture.name)
+    ).all()
+    if not ventures:
+        return RedirectResponse(
+            "/admin/companies?error=" + quote("No portfolio ventures found in the CRM sync."),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    existing_names = {c.name.strip().lower() for c in db.scalars(select(Company)).all()}
+    created = founders_filled = 0
+    for v in ventures:
+        name = (v.name or "").strip()
+        if not name or name.lower() in existing_names:
+            continue
+        company = Company(
+            name=name,
+            slug=_unique_slug(_slugify(name), db),
+            description=(v.description or None) if hasattr(v, "description") else None,
+        )
+        db.add(company)
+        db.commit()
+        created += 1
+        existing_names.add(name.lower())
+        result = refresh_founders_from_attio(company, db)
+        if result.get("ok"):
+            founders_filled += 1
+
+    return RedirectResponse(
+        "/admin/companies?success=" + quote(
+            f"Imported {created} portfolio companies from CRM "
+            f"({founders_filled} with founder contacts from Attio)."
+        ),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/companies/{company_id}/refresh-founders", response_class=HTMLResponse)
+def refresh_founders(
+    company_id: int,
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    from urllib.parse import quote
+    from ..services.reminder_service import refresh_founders_from_attio
+
+    company = db.get(Company, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+    result = refresh_founders_from_attio(company, db)
+    param = "success" if result.get("ok") else "error"
+    return RedirectResponse(
+        f"/admin/companies/{company_id}?{param}={quote(result['message'])}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
 @router.post("/companies/{company_id}/founders", response_class=HTMLResponse)
 def update_founders(
     company_id: int,

@@ -810,3 +810,46 @@ def normalize_attio_file(raw: dict) -> dict:
         "file_size": int(size) if size else None,
         "download_url": download_url or None,
     }
+
+
+# ---------------------------------------------------------------------------
+# People (founder contacts)
+# ---------------------------------------------------------------------------
+
+def query_people_for_company(company_record_id: str, api_key: str) -> list[dict]:
+    """
+    People linked to an Attio company record: [{"name": ..., "email": ...}].
+    Fail-safe: returns [] on any error.
+    """
+    try:
+        data = _post(
+            "/objects/people/records/query",
+            api_key,
+            {
+                "filter": {
+                    "company": {
+                        "target_object": "companies",
+                        "target_record_id": company_record_id,
+                    }
+                },
+                "limit": 50,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Attio people query failed for company %s: %s", company_record_id, exc)
+        return []
+
+    people: list[dict] = []
+    for rec in data.get("data", []):
+        values = rec.get("values", {})
+        name = _pick_value(values.get("name", []) or [])
+        if isinstance(name, dict):  # personal-name type: {first_name, last_name, full_name}
+            name = name.get("full_name") or " ".join(
+                x for x in [name.get("first_name"), name.get("last_name")] if x
+            )
+        email = _pick_value(values.get("email_addresses", []) or [])
+        if isinstance(email, dict):
+            email = email.get("email_address") or email.get("original_email_address")
+        if name or email:
+            people.append({"name": str(name or email), "email": str(email or "")})
+    return people

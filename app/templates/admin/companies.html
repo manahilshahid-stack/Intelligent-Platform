@@ -18,6 +18,19 @@
   {% if error %}
   <div class="alert alert-error">{{ error }}</div>
   {% endif %}
+  {% if request.query_params.get('success') %}
+  <div class="alert alert-success">{{ request.query_params.get('success') }}</div>
+  {% endif %}
+  {% if request.query_params.get('error') and not error %}
+  <div class="alert alert-error">{{ request.query_params.get('error') }}</div>
+  {% endif %}
+
+  <form method="post" action="/admin/companies/import-from-crm" style="margin-bottom:1.25rem">
+    <button class="btn btn-secondary btn-sm" type="submit"
+            onclick="return confirm('Create a company here for every Attio portfolio venture that is missing, and auto-fill founder contacts?')">
+      ⟳ Import portfolio companies from CRM
+    </button>
+  </form>
 
   <div style="display:grid;grid-template-columns:1fr 340px;gap:1.5rem;align-items:start">
 

@@ -281,3 +281,62 @@ def run_reminder_sweep(db: Session, today: date | None = None) -> dict:
     log.info("reminder sweep: %s %s", summary, messages)
     return {"year": year, "quarter": quarter, "sent1": sent1, "sent2": sent2,
             "skipped": skipped, "failed": failed, "message": summary}
+
+
+# ---------------------------------------------------------------------------
+# Attio auto-fill
+# ---------------------------------------------------------------------------
+
+def refresh_founders_from_attio(company, db: Session) -> dict:
+    """
+    Auto-fill founder contacts (names + emails) from Attio.
+
+    Matches the company to its Attio-synced venture by name, fetches the
+    People linked to that Attio company record, and keeps the ones whose
+    name matches the venture's founders list (so investors/other contacts
+    linked to the company are not emailed). Saves to company.founder_contacts.
+    """
+    from ..models import CrmVenture
+    from .attio_client import get_attio_api_key, query_people_for_company
+
+    venture = db.scalar(select(CrmVenture).where(CrmVenture.name.ilike(company.name)))
+    if not venture:
+        return {"ok": False, "message": f"{company.name}: no matching Attio venture found."}
+    if not venture.attio_record_id:
+        return {"ok": False, "message": f"{company.name}: venture has no Attio record id."}
+
+    api_key = get_attio_api_key(db)
+    if not api_key:
+        return {"ok": False, "message": "Attio API key is not configured."}
+
+    people = query_people_for_company(venture.attio_record_id, api_key)
+    if not people:
+        return {"ok": False, "message": f"{company.name}: no people found on the Attio record."}
+
+    founder_names = [n.strip().lower() for n in (venture.founders or "").split(",") if n.strip()]
+
+    def _is_founder(person_name: str) -> bool:
+        if not founder_names:
+            return True  # no founders list — take all linked people
+        pn = person_name.lower()
+        return any(fn in pn or pn in fn for fn in founder_names)
+
+    contacts = [p for p in people if _is_founder(p["name"])]
+    # Prefer entries with emails; dedupe by lowercased email/name
+    seen: set[str] = set()
+    cleaned: list[dict] = []
+    for p in sorted(contacts, key=lambda x: (not x["email"],)):
+        key = (p["email"] or p["name"]).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(p)
+
+    if not cleaned:
+        return {"ok": False, "message": f"{company.name}: no founder matches among Attio people."}
+
+    company.founder_contacts = json.dumps(cleaned, ensure_ascii=False)
+    db.commit()
+    with_email = sum(1 for p in cleaned if p["email"])
+    return {"ok": True,
+            "message": f"{company.name}: {len(cleaned)} founder(s) saved, {with_email} with email."}
