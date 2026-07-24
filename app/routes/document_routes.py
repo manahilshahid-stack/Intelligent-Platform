@@ -537,6 +537,8 @@ async def upload_document(
 
     try:
         raw_text = extract_text(file.filename, data)
+    except MemoryError:
+        return _err("The file is too large to process on this server.", 500)
     except Exception as exc:
         log.warning("Text extraction failed for %s: %s", file.filename, exc)
         extraction_status = ExtractionStatus.failed
@@ -574,9 +576,16 @@ async def upload_document(
         reporting_month=r_month,
         reporting_quarter=r_quarter,
     )
-    db.add(doc)
-    db.commit()
-    db.refresh(doc)
+    try:
+        db.add(doc)
+        db.commit()
+        db.refresh(doc)
+    except Exception as exc:
+        # Surface the real database error in the form instead of a bare 500,
+        # so failures are self-diagnosing.
+        db.rollback()
+        log.exception("Document save failed for %s", file.filename)
+        return _err(f"Saving the document failed: {type(exc).__name__}: {str(exc)[:400]}", 500)
 
     # ── Step 3: LLM extraction + indexing (background, best-effort) ──────────
     # Runs after the response is sent so the upload request stays fast —
