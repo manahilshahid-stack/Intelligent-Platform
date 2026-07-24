@@ -409,6 +409,14 @@ class Chunk(Base):
     # JSON-serialised list[float]; NULL until embedding is generated
     embedding: Mapped[str | None] = mapped_column(Text, deferred=True)
     approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Denormalised reporting period (copied from the document) for cheap
+    # SQL filtering/boosting at retrieval time.
+    reporting_year: Mapped[int | None] = mapped_column(Integer)
+    reporting_quarter: Mapped[int | None] = mapped_column(Integer)   # 1-4
+    reporting_month: Mapped[int | None] = mapped_column(Integer)     # 1-12
+    # JSON metadata: {"section": ..., "chunk_index": n, "is_table": bool,
+    #                 "category": ..., "period": "2026-Q2", "context": "..."}
+    meta: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
     document: Mapped[Document] = relationship(back_populates="chunks")
@@ -419,6 +427,7 @@ class Chunk(Base):
         Index("ix_chunks_company_id", "company_id"),
         Index("ix_chunks_approved", "approved"),
         Index("ix_chunks_document_id", "document_id"),
+        Index("ix_chunks_period", "reporting_year", "reporting_quarter"),
     )
 
 

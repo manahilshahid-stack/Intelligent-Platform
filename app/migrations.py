@@ -175,6 +175,11 @@ _COLUMN_ADDITIONS: list[tuple[str, str, str]] = [
     ("documents", "reporting_quarter", "INTEGER"),
     # companies — optional linked Google Drive folder
     ("companies", "drive_folder_url", "TEXT"),
+    # chunks — reporting period + rich metadata for intelligent retrieval
+    ("chunks", "reporting_year", "INTEGER"),
+    ("chunks", "reporting_quarter", "INTEGER"),
+    ("chunks", "reporting_month", "INTEGER"),
+    ("chunks", "meta", "TEXT"),
 ]
 
 
@@ -199,6 +204,11 @@ def _ensure_columns(conn) -> None:
         _add_column_if_missing(conn, "knowledge_chunks", "sanitized_text", "TEXT")
     if _table_exists(conn, "companies"):
         _add_column_if_missing(conn, "companies", "drive_folder_url", "TEXT")
+    if _table_exists(conn, "chunks"):
+        _add_column_if_missing(conn, "chunks", "reporting_year", "INTEGER")
+        _add_column_if_missing(conn, "chunks", "reporting_quarter", "INTEGER")
+        _add_column_if_missing(conn, "chunks", "reporting_month", "INTEGER")
+        _add_column_if_missing(conn, "chunks", "meta", "TEXT")
 
     # Column back-fills below use Postgres-specific DDL (BYTEA, enum FK types).
     # On SQLite (local dev), create_all already creates the full schema, so

@@ -5,7 +5,10 @@ import hashlib
 import logging
 from typing import Annotated, List
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import (
+    APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request,
+    UploadFile, status,
+)
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -46,6 +49,54 @@ def _readable_size(n: int) -> str:
     return f"{n:.1f} TB"
 
 
+def _process_document_background(document_id: int) -> None:
+    """
+    Post-upload processing (LLM KPI extraction + intelligent full-text indexing)
+    run as a FastAPI background task AFTER the upload response is sent.
+
+    Runs with its own DB session. Each step is best-effort: a failure updates
+    the document's status/error fields but never crashes the app. This keeps
+    upload requests fast (Railway kills long requests, which surfaced as
+    'internal server error' when processing ran synchronously).
+    """
+    from ..database import SessionLocal
+    from ..services.settings_service import get_openrouter_api_key
+
+    db = SessionLocal()
+    try:
+        doc = db.get(Document, document_id)
+        if not doc:
+            return
+
+        api_key = get_openrouter_api_key(db)
+        if not api_key:
+            doc.extraction_status = ExtractionStatus.no_api_key
+            doc.extraction_error = (
+                "OpenRouter API key is not configured. "
+                "Set OPENROUTER_API_KEY or go to Admin → Settings."
+            )
+            db.commit()
+            return
+
+        try:
+            from ..services.portfolio_extraction import run_portfolio_extraction
+            run_portfolio_extraction(document_id, db)
+        except Exception as exc:
+            log.warning("background: LLM extraction failed for document %d: %s", document_id, exc)
+            db.rollback()
+
+        try:
+            from ..services.document_indexer import index_document
+            index_document(document_id, db)
+        except Exception as exc:
+            log.warning("background: indexing failed for document %d: %s", document_id, exc)
+            db.rollback()
+    except Exception as exc:
+        log.error("background: unexpected failure for document %d: %s", document_id, exc)
+    finally:
+        db.close()
+
+
 def _companies_for_user(user: User, db: Session) -> list[Company]:
     """Return companies the user is allowed to upload to."""
     if user.role == UserRole.admin:
@@ -84,6 +135,7 @@ def bulk_upload_form(
 @router.post("/documents/upload/bulk", response_class=HTMLResponse)
 async def bulk_upload_post(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(require_login)],
 ):
@@ -268,22 +320,9 @@ async def bulk_upload_post(
         db.commit()
         db.refresh(doc)
 
-        # LLM extraction (best-effort)
+        # LLM extraction + indexing run in the background after the response
         if extraction_status == ExtractionStatus.complete and raw_text:
-            from ..services.portfolio_extraction import run_portfolio_extraction
-            from ..services.settings_service import get_openrouter_api_key
-            api_key = get_openrouter_api_key(db)
-            if api_key:
-                try:
-                    run_portfolio_extraction(doc.id, db)
-                except Exception:
-                    pass
-                # Index full report text for portfolio chat retrieval (best-effort)
-                try:
-                    from ..services.embeddings import embed_document_raw_text
-                    embed_document_raw_text(doc.id, db)
-                except Exception as exc:
-                    log.warning("raw-text embedding failed for document %d: %s", doc.id, exc)
+            background_tasks.add_task(_process_document_background, doc.id)
 
         results.append({"index": i, "filename": filename, "ok": True, "doc_id": doc.id, "title": title})
 
@@ -364,6 +403,7 @@ def upload_form(
 @router.post("/documents/upload", response_class=HTMLResponse)
 async def upload_document(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(require_login)],
     company_id: Annotated[int, Form()],
@@ -538,32 +578,11 @@ async def upload_document(
     db.commit()
     db.refresh(doc)
 
-    # ── Step 3: LLM extraction (synchronous, best-effort) ────────────────────
-    # Only attempt if text extraction succeeded and produced usable content
+    # ── Step 3: LLM extraction + indexing (background, best-effort) ──────────
+    # Runs after the response is sent so the upload request stays fast —
+    # synchronous LLM calls here exceeded Railway's request timeout (500s).
     if extraction_status == ExtractionStatus.complete and raw_text:
-        from ..services.portfolio_extraction import run_portfolio_extraction
-        from ..services.settings_service import get_openrouter_api_key
-
-        api_key = get_openrouter_api_key(db)
-        if not api_key:
-            doc.extraction_status = ExtractionStatus.no_api_key
-            doc.extraction_error = (
-                "OpenRouter API key is not configured. "
-                "Set OPENROUTER_API_KEY in your environment or go to Admin → Settings."
-            )
-            db.commit()
-        else:
-            try:
-                run_portfolio_extraction(doc.id, db)
-            except Exception as exc:
-                log.warning("LLM extraction failed for document %d: %s", doc.id, exc)
-                # run_portfolio_extraction already updated doc status to failed
-            # Index full report text for portfolio chat retrieval (best-effort)
-            try:
-                from ..services.embeddings import embed_document_raw_text
-                embed_document_raw_text(doc.id, db)
-            except Exception as exc:
-                log.warning("raw-text embedding failed for document %d: %s", doc.id, exc)
+        background_tasks.add_task(_process_document_background, doc.id)
 
     # Optional caller-provided return location (must be a local path)
     if redirect_to.startswith("/"):
@@ -742,7 +761,8 @@ def re_embed_document(
         .limit(1)
     )
 
-    from ..services.embeddings import embed_approved_extraction, embed_document_raw_text
+    from ..services.embeddings import embed_approved_extraction
+    from ..services.document_indexer import index_document
 
     # Re-embed the approved KPI extraction, if any
     if extraction:
@@ -753,7 +773,7 @@ def re_embed_document(
 
     # Re-index the full report text for portfolio chat retrieval
     try:
-        embed_document_raw_text(document_id, db)
+        index_document(document_id, db)
     except (ValueError, RuntimeError) as exc:
         log.warning("Raw-text re-embed failed for document %d: %s", document_id, exc)
 

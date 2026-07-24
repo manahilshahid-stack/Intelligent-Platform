@@ -736,8 +736,8 @@ def sync_company_drive_folder(company, db, uploaded_by_id: int) -> dict:
                 except Exception as exc:
                     log.warning("drive sync: extraction failed for doc %d (%s)", doc.id, exc)
                 try:
-                    from .embeddings import embed_document_raw_text
-                    embed_document_raw_text(doc.id, db)
+                    from .document_indexer import index_document
+                    index_document(doc.id, db)
                 except Exception as exc:
                     log.warning("drive sync: raw-text embedding failed for doc %d (%s)", doc.id, exc)
         except Exception as exc:

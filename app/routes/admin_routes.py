@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -217,24 +217,58 @@ def company_bucket(
     })
 
 
+def _sync_drive_background(company_id: int, uploaded_by_id: int) -> None:
+    """Drive folder sync as a background task with its own DB session —
+    downloading + LLM-processing many files far exceeds the request timeout."""
+    import logging
+    log = logging.getLogger(__name__)
+    from ..database import SessionLocal
+    from ..services.gdrive_ingest import sync_company_drive_folder
+
+    db = SessionLocal()
+    try:
+        company = db.get(Company, company_id)
+        if not company:
+            return
+        result = sync_company_drive_folder(company, db, uploaded_by_id=uploaded_by_id)
+        log.info("drive sync (company %d): %s", company_id, result.get("message"))
+    except Exception as exc:
+        log.error("drive sync (company %d) crashed: %s", company_id, exc)
+    finally:
+        db.close()
+
+
 @router.post("/companies/{company_id}/sync-drive", response_class=HTMLResponse)
 def sync_company_drive(
     company_id: int,
     request: Request,
+    background_tasks: BackgroundTasks,
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    from urllib.parse import quote
-    from ..services.gdrive_ingest import sync_company_drive_folder
+    from ..services.gdrive_ingest import _FOLDER_ID_RE, _service_account_token
 
     company = db.get(Company, company_id)
     if not company:
         raise HTTPException(status_code=404, detail="Company not found.")
 
-    result = sync_company_drive_folder(company, db, uploaded_by_id=admin.id)
-    param = "success" if result.get("status") == "ok" else "error"
+    # Validate cheaply up-front so the user gets immediate feedback;
+    # the actual download/processing runs in the background.
+    if not company.drive_folder_url or not _FOLDER_ID_RE.search(company.drive_folder_url):
+        return RedirectResponse(
+            f"/admin/companies/{company_id}?error=No+valid+Drive+folder+URL+linked.",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    if not _service_account_token(db):
+        return RedirectResponse(
+            f"/admin/companies/{company_id}?error=Google+service+account+is+not+configured+"
+            f"(set+GOOGLE_SERVICE_ACCOUNT_JSON+and+share+the+folder+with+it).",
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+
+    background_tasks.add_task(_sync_drive_background, company_id, admin.id)
     return RedirectResponse(
-        f"/admin/companies/{company_id}?{param}={quote(result.get('message', ''))}",
+        f"/admin/companies/{company_id}?success=Drive+sync+started+—+new+files+will+appear+here+in+a+few+minutes.",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 

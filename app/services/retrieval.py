@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import math
 import logging
+import re
 import httpx
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -97,6 +98,69 @@ def _kw_terms(query: str) -> list[str]:
         if len(t) >= 3 and t not in _KW_STOPWORDS:
             out.append(t)
     return out[:12]
+
+
+_QUARTER_PATTERNS = [
+    re.compile(r"\bq([1-4])[\s'\-]*((?:20)?\d{2})?\b", re.I),          # Q2 2026 / Q2'26 / Q2
+    re.compile(r"\b((?:20)\d{2})[\s\-]*q([1-4])\b", re.I),             # 2026 Q2 / 2026-Q2
+    re.compile(r"\b(first|second|third|fourth)\s+quarter(?:\s+(?:of\s+)?((?:20)\d{2}))?", re.I),
+]
+_MONTH_NAMES = {m.lower(): i + 1 for i, m in enumerate(
+    ["january", "february", "march", "april", "may", "june", "july",
+     "august", "september", "october", "november", "december"])}
+_ORDINAL_Q = {"first": 1, "second": 2, "third": 3, "fourth": 4}
+
+
+def parse_query_period(query: str) -> dict | None:
+    """Detect an explicit reporting period in the question.
+
+    Returns {"year": int|None, "quarter": int|None, "month": int|None} or None.
+    Used to prefer chunks from the asked-about period.
+    """
+    q = query.lower()
+
+    m = _QUARTER_PATTERNS[0].search(q)
+    if m:
+        year = m.group(2)
+        return {"quarter": int(m.group(1)),
+                "year": (2000 + int(year)) if year and len(year) == 2
+                        else int(year) if year else None,
+                "month": None}
+    m = _QUARTER_PATTERNS[1].search(q)
+    if m:
+        return {"year": int(m.group(1)), "quarter": int(m.group(2)), "month": None}
+    m = _QUARTER_PATTERNS[2].search(q)
+    if m:
+        year = m.group(2)
+        return {"quarter": _ORDINAL_Q[m.group(1).lower()],
+                "year": int(year) if year else None, "month": None}
+
+    for name, num in _MONTH_NAMES.items():
+        mm = re.search(rf"\b{name}\s+((?:20)\d{{2}})\b", q)
+        if mm:
+            return {"year": int(mm.group(1)), "month": num, "quarter": None}
+
+    ym = re.search(r"\b(20\d{2})\b", q)
+    if ym:
+        return {"year": int(ym.group(1)), "quarter": None, "month": None}
+    return None
+
+
+def _period_matches(chunk, period: dict) -> bool:
+    """True when a chunk's stored reporting period agrees with the asked period."""
+    y, qtr, mon = period.get("year"), period.get("quarter"), period.get("month")
+    if y and getattr(chunk, "reporting_year", None) not in (None, y):
+        return False
+    if qtr and getattr(chunk, "reporting_quarter", None) not in (None, qtr):
+        return False
+    if mon and getattr(chunk, "reporting_month", None) not in (None, mon):
+        return False
+    # require at least one positive match (not just absence of conflict)
+    return any([
+        y and getattr(chunk, "reporting_year", None) == y,
+        qtr and getattr(chunk, "reporting_quarter", None) == qtr,
+        mon and getattr(chunk, "reporting_month", None) == mon,
+    ])
 
 
 def _rrf(*ranked_lists: list, k: int = 60) -> list:
@@ -255,10 +319,23 @@ def retrieve_relevant_chunks(
         pg_params["filt_cid"] = int(filters["company_id"])
         pg_extra = f"{pg_extra} AND {clause}" if pg_extra else clause
 
-    scored = _hybrid_rank(db, Chunk, stmt, query, query_vec, limit, "chunks", pg_extra, pg_params)
+    # Retrieve a larger pool so period-aware re-ranking has room to work.
+    asked_period = parse_query_period(query)
+    pool = limit * 3 if asked_period else limit
+    scored = _hybrid_rank(db, Chunk, stmt, query, query_vec, pool, "chunks", pg_extra, pg_params)
 
     if not scored:
         return []
+
+    # ── Period-aware preference ────────────────────────────────────────────────
+    # When the question names a period ("Q2 2026", "March 2026"), surface chunks
+    # from that reporting period first (stable within each group). If nothing
+    # matches, keep the original ranking rather than returning nothing.
+    if asked_period:
+        matching = [(s, c) for s, c in scored if _period_matches(c, asked_period)]
+        if matching:
+            others = [(s, c) for s, c in scored if not _period_matches(c, asked_period)]
+            scored = matching + others
 
     # ── Pre-load companies and documents for ranked chunks (avoid N+1) ─────────
     ranked_chunks = [c for _, c in scored]
