@@ -225,6 +225,14 @@
         <form method="post" action="/admin/companies/{{ company.id }}/sync-drive">
           <button class="btn btn-secondary btn-full" type="submit">⟳ Sync new files from Drive</button>
         </form>
+        {% if company.last_drive_sync_at %}
+        <p class="text-sm" style="margin-top:0.6rem">
+          Last sync: {{ company.last_drive_sync_at.strftime("%d %b %Y %H:%M") }} UTC<br>
+          <span class="text-muted">{{ company.last_drive_sync_result or "—" }}</span>
+        </p>
+        {% else %}
+        <p class="text-sm text-muted" style="margin-top:0.6rem">Never synced yet.</p>
+        {% endif %}
         <p class="text-sm text-muted" style="margin-top:0.5rem">
           Pulls new PDFs from the folder and adds them as documents. Requires a Google service account with access to the folder.
         </p>

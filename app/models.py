@@ -134,6 +134,9 @@ class Company(Base):
     # Founder contacts for report reminders: JSON [{"name": ..., "email": ...}].
     # Names are prefilled from the Attio-synced venture; emails entered by admin.
     founder_contacts: Mapped[str | None] = mapped_column(Text)
+    # Last Drive sync outcome, shown on the bucket page
+    last_drive_sync_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_drive_sync_result: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
 
     users: Mapped[list["User"]] = relationship(back_populates="company")

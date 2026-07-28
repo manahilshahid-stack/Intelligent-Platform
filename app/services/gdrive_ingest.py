@@ -587,7 +587,7 @@ def _guess_quarter_period(filename: str) -> tuple[int, int] | None:
     return None
 
 
-def sync_company_drive_folder(company, db, uploaded_by_id: int) -> dict:
+def _sync_company_drive_folder_impl(company, db, uploaded_by_id: int) -> dict:
     """
     Pull new files from the company's linked Drive folder into its document bucket.
 
@@ -870,3 +870,23 @@ def discover_investor_reporting_folders(db) -> dict:
         msg += f" No Investor Reporting subfolder in: {', '.join(sorted(no_ir)[:8])}."
     return {"status": "ok", "message": msg, "linked": linked,
             "already": already, "unmatched": unmatched, "no_ir": no_ir}
+
+
+def sync_company_drive_folder(company, db, uploaded_by_id: int) -> dict:
+    """Run the Drive sync and record the outcome on the company row so the
+    bucket page can show when the last sync ran and what happened."""
+    from datetime import datetime as _dt
+
+    try:
+        result = _sync_company_drive_folder_impl(company, db, uploaded_by_id)
+    except Exception as exc:  # noqa: BLE001 — never lose the outcome
+        result = {"status": "error", "message": f"Sync crashed: {exc}"}
+        log.error("drive sync for %s crashed: %s", company.name, exc, exc_info=True)
+        db.rollback()
+    try:
+        company.last_drive_sync_at = _dt.utcnow()
+        company.last_drive_sync_result = result.get("message")
+        db.commit()
+    except Exception:
+        db.rollback()
+    return result
