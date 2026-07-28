@@ -642,6 +642,7 @@ def _sync_company_drive_folder_impl(company, db, uploaded_by_id: int) -> dict:
     )
 
     added = skipped = failed = 0
+    err_samples: list[str] = []
     for f in files:
         name = f.get("name", "")
         ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
@@ -656,6 +657,15 @@ def _sync_company_drive_folder_impl(company, db, uploaded_by_id: int) -> dict:
             )
             if r.status_code != 200:
                 failed += 1
+                reason = ""
+                try:
+                    err = r.json().get("error", {})
+                    reason = (err.get("errors") or [{}])[0].get("reason") or err.get("message", "")
+                except Exception:
+                    reason = (r.text or "")[:100]
+                err_samples.append(f"{name[:48]}: HTTP {r.status_code} {reason}".strip())
+                log.warning("drive sync: download failed for %s (HTTP %s %s)",
+                            name[:60], r.status_code, reason)
                 continue
             data = r.content
             digest = hashlib.sha256(data).hexdigest()
@@ -720,12 +730,20 @@ def _sync_company_drive_folder_impl(company, db, uploaded_by_id: int) -> dict:
         except Exception as exc:
             db.rollback()
             log.warning("drive folder sync: %s failed (%s)", name[:60], exc)
+            err_samples.append(f"{name[:48]}: {str(exc)[:100]}")
             failed += 1
 
+    message = f"Sync complete: {added} added, {skipped} skipped, {failed} failed."
+    if err_samples:
+        message += f" First error — {err_samples[0]}"
+        if "cannotDownloadFile" in message or "downloadRestricted" in message or "exportsDisabled" in message:
+            message += (" → Downloads are blocked for viewers on these files. In Drive: open the "
+                        "folder's Share dialog → gear icon → enable 'Viewers and commenters can "
+                        "see the option to download, print, and copy' (or ask your Workspace admin).")
     return {
         "status": "ok",
         "added": added, "skipped": skipped, "failed": failed,
-        "message": f"Sync complete: {added} added, {skipped} skipped, {failed} failed.",
+        "message": message,
     }
 
 
@@ -785,11 +803,25 @@ def _files_in_folder_recursive(folder_id: str, headers: dict, max_depth: int = 3
     (e.g. year folders) up to max_depth. Never leaves the given folder."""
     files = _drive_list({
         "q": f"'{folder_id}' in parents and trashed=false",
-        "fields": "nextPageToken,files(id,name,mimeType,size)",
+        "fields": "nextPageToken,files(id,name,mimeType,size,shortcutDetails)",
     }, headers)
     out: list[dict] = []
     for f in files:
-        if f.get("mimeType") == "application/vnd.google-apps.folder":
+        mime = f.get("mimeType", "")
+        if mime == "application/vnd.google-apps.shortcut":
+            # Resolve shortcuts to their target so downloads work
+            target = f.get("shortcutDetails", {}) or {}
+            tid = target.get("targetId")
+            tmime = target.get("targetMimeType", "")
+            if not tid:
+                continue
+            if tmime == "application/vnd.google-apps.folder":
+                if max_depth > 1:
+                    out.extend(_files_in_folder_recursive(tid, headers, max_depth - 1))
+            else:
+                out.append({"id": tid, "name": f.get("name", ""), "mimeType": tmime})
+            continue
+        if mime == "application/vnd.google-apps.folder":
             if max_depth > 1:
                 out.extend(_files_in_folder_recursive(f["id"], headers, max_depth - 1))
         else:
