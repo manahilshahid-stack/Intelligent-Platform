@@ -25,12 +25,27 @@
   <div class="alert alert-error">{{ request.query_params.get('error') }}</div>
   {% endif %}
 
-  <form method="post" action="/admin/companies/import-from-crm" style="margin-bottom:1.25rem">
-    <button class="btn btn-secondary btn-sm" type="submit"
-            onclick="return confirm('Create a company here for every Attio portfolio venture that is missing, and auto-fill founder contacts?')">
-      ⟳ Import portfolio companies from CRM
-    </button>
-  </form>
+  <div class="card" style="margin-bottom:1.25rem">
+    <h2>Google Drive connection</h2>
+    <p class="text-sm text-muted" style="margin-bottom:0.75rem">
+      Paste the <strong>Portfolio</strong> folder URL (Shared drive → Merantix Capital Deals → Portfolio).
+      Discovery walks fund → company folders and links each company's <strong>Investor Reporting</strong>
+      subfolder — nothing outside those folders is ever read. A nightly sync then pulls new reports automatically.
+    </p>
+    <form method="post" action="/admin/companies/discover-drive" style="display:flex;gap:0.6rem;flex-wrap:wrap">
+      <input name="portfolio_folder_url" type="url" required
+             value="{{ portfolio_drive_folder or '' }}"
+             placeholder="https://drive.google.com/drive/folders/…"
+             style="flex:1;min-width:320px;padding:0.5rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+      <button class="btn btn-primary btn-sm" type="submit">Discover &amp; link folders</button>
+    </form>
+    <form method="post" action="/admin/companies/import-from-crm" style="margin-top:0.6rem">
+      <button class="btn btn-secondary btn-sm" type="submit"
+              onclick="return confirm('Create a company here for every Attio portfolio venture that is missing, and auto-fill founder contacts?')">
+        ⟳ Import portfolio companies from CRM
+      </button>
+    </form>
+  </div>
 
   <div style="display:grid;grid-template-columns:1fr 340px;gap:1.5rem;align-items:start">
 

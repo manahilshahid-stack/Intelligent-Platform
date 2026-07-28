@@ -111,11 +111,35 @@ def companies_page(
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    from ..services.settings_service import get_portfolio_drive_folder
     return _render(request, "admin/companies.html", {
         "user": admin,
         "rows": _companies_overview(db),
+        "portfolio_drive_folder": get_portfolio_drive_folder(db),
         "error": None,
     })
+
+
+@router.post("/companies/discover-drive", response_class=HTMLResponse)
+def discover_drive_folders(
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    portfolio_folder_url: Annotated[str, Form()] = "",
+):
+    """Save the Portfolio root folder and auto-link every company's
+    Investor Reporting subfolder."""
+    from urllib.parse import quote
+    from ..services.gdrive_ingest import discover_investor_reporting_folders
+    from ..services.settings_service import set_portfolio_drive_folder
+
+    set_portfolio_drive_folder(portfolio_folder_url, db)
+    result = discover_investor_reporting_folders(db)
+    param = "success" if result.get("status") == "ok" else "error"
+    return RedirectResponse(
+        f"/admin/companies?{param}={quote(result.get('message', ''))}",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
 
 
 @router.post("/companies", response_class=HTMLResponse)

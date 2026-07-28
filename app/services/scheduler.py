@@ -63,6 +63,39 @@ def run_full_refresh() -> None:
         log.info("scheduled refresh: END")
 
 
+def run_drive_sync_all_job() -> None:
+    """Nightly: pull new files from every company's linked Investor Reporting
+    folder. Own DB session, never raises; per-company failures are isolated."""
+    from sqlalchemy import select
+    from ..database import SessionLocal
+    from ..models import Company, User, UserRole
+    from .gdrive_ingest import sync_company_drive_folder
+
+    db = SessionLocal()
+    try:
+        admin = db.scalar(select(User).where(User.role == UserRole.admin).limit(1))
+        if not admin:
+            log.warning("drive sync all: no admin user found — skipping.")
+            return
+        companies = db.scalars(
+            select(Company).where(Company.drive_folder_url.is_not(None)).order_by(Company.name)
+        ).all()
+        total_added = 0
+        for company in companies:
+            try:
+                result = sync_company_drive_folder(company, db, uploaded_by_id=admin.id)
+                total_added += result.get("added", 0) or 0
+                log.info("drive sync all: %s → %s", company.name, result.get("message"))
+            except Exception as exc:  # noqa: BLE001
+                log.error("drive sync all: %s failed: %s", company.name, exc)
+                db.rollback()
+        log.info("drive sync all: done — %d companies, %d new files.", len(companies), total_added)
+    except Exception as exc:  # noqa: BLE001
+        log.error("drive sync all failed: %s", exc, exc_info=True)
+    finally:
+        db.close()
+
+
 def run_reminder_sweep_job() -> None:
     """Daily quarterly-report reminder sweep (own DB session, never raises)."""
     from ..database import SessionLocal
@@ -184,6 +217,22 @@ def start_scheduler():
         run_reminder_sweep_job,
         trigger=reminder_trigger,
         id="reminder_sweep",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+        replace_existing=True,
+    )
+
+    # Nightly Drive sync of every linked Investor Reporting folder (default 07:00).
+    drive_cron = os.getenv("DRIVE_SYNC_CRON", "0 7 * * *")
+    try:
+        drive_trigger = CronTrigger.from_crontab(drive_cron, timezone=tz)
+    except Exception:
+        drive_trigger = CronTrigger.from_crontab("0 7 * * *", timezone=tz)
+    sched.add_job(
+        run_drive_sync_all_job,
+        trigger=drive_trigger,
+        id="drive_sync_all",
         max_instances=1,
         coalesce=True,
         misfire_grace_time=3600,

@@ -624,36 +624,13 @@ def sync_company_drive_folder(company, db, uploaded_by_id: int) -> dict:
         }
     headers = {"Authorization": f"Bearer {token}"}
 
-    # List folder contents (paged)
-    files: list[dict] = []
-    page_token = None
-    try:
-        while True:
-            params = {
-                "q": f"'{folder_id}' in parents and trashed=false",
-                "fields": "nextPageToken,files(id,name,mimeType,size)",
-                "pageSize": 100,
-                "supportsAllDrives": "true",
-                "includeItemsFromAllDrives": "true",
-            }
-            if page_token:
-                params["pageToken"] = page_token
-            r = httpx.get(
-                "https://www.googleapis.com/drive/v3/files",
-                params=params, headers=headers, timeout=_TIMEOUT,
-            )
-            if r.status_code in (401, 403, 404):
-                return {"status": "error",
-                        "message": "No access to the folder — share it with the service-account email."}
-            r.raise_for_status()
-            data = r.json()
-            files.extend(data.get("files", []))
-            page_token = data.get("nextPageToken")
-            if not page_token:
-                break
-    except Exception as exc:
-        log.warning("drive folder sync: listing failed (%s)", exc)
-        return {"status": "error", "message": f"Drive listing failed: {exc}"}
+    # List folder contents, recursing into subfolders (e.g. year folders)
+    # WITHIN the linked Investor Reporting folder only.
+    files = _files_in_folder_recursive(folder_id, headers)
+    if not files:
+        return {"status": "ok", "added": 0, "skipped": 0, "failed": 0,
+                "message": ("No files found in the linked folder — check that it is "
+                            "shared with the service-account email.")}
 
     # Existing hashes for dedupe
     existing_hashes = set(
@@ -750,3 +727,146 @@ def sync_company_drive_folder(company, db, uploaded_by_id: int) -> dict:
         "added": added, "skipped": skipped, "failed": failed,
         "message": f"Sync complete: {added} added, {skipped} skipped, {failed} failed.",
     }
+
+
+# ---------------------------------------------------------------------------
+# Portfolio folder discovery (Investor Reportings auto-linking)
+#
+# Drive layout (shared drive "Merantix Capital Deals"):
+#   Portfolio/
+#     <Fund folder>/               e.g. Merantix AI Fund, Merantix AI Fund II, Both
+#       <Company folder>/
+#         Investor Reporting(s)/   ← the ONLY folder that ever gets linked/synced
+#
+# The walker descends exactly this path and links each company's
+# Investor Reporting folder to the matching portal company. Sync afterwards
+# reads files only from linked folders — nothing else is ever accessed.
+# ---------------------------------------------------------------------------
+
+_IR_NAME_RE = re.compile(r"investor[\s_-]*reporting", re.I)
+
+
+def _drive_list(params: dict, headers: dict) -> list[dict]:
+    """Paged files.list. Returns [] on error (fail-safe)."""
+    items: list[dict] = []
+    page_token = None
+    try:
+        while True:
+            p = dict(params)
+            p.setdefault("pageSize", 100)
+            p["supportsAllDrives"] = "true"
+            p["includeItemsFromAllDrives"] = "true"
+            if page_token:
+                p["pageToken"] = page_token
+            r = httpx.get("https://www.googleapis.com/drive/v3/files",
+                          params=p, headers=headers, timeout=_TIMEOUT)
+            r.raise_for_status()
+            data = r.json()
+            items.extend(data.get("files", []))
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
+    except Exception as exc:
+        log.warning("drive list failed: %s", exc)
+        return []
+    return items
+
+
+def _child_folders(folder_id: str, headers: dict) -> list[dict]:
+    return _drive_list({
+        "q": (f"'{folder_id}' in parents and trashed=false "
+              "and mimeType='application/vnd.google-apps.folder'"),
+        "fields": "nextPageToken,files(id,name)",
+    }, headers)
+
+
+def _files_in_folder_recursive(folder_id: str, headers: dict, max_depth: int = 3) -> list[dict]:
+    """All non-folder files within a folder, recursing into subfolders
+    (e.g. year folders) up to max_depth. Never leaves the given folder."""
+    files = _drive_list({
+        "q": f"'{folder_id}' in parents and trashed=false",
+        "fields": "nextPageToken,files(id,name,mimeType,size)",
+    }, headers)
+    out: list[dict] = []
+    for f in files:
+        if f.get("mimeType") == "application/vnd.google-apps.folder":
+            if max_depth > 1:
+                out.extend(_files_in_folder_recursive(f["id"], headers, max_depth - 1))
+        else:
+            out.append(f)
+    return out
+
+
+def discover_investor_reporting_folders(db) -> dict:
+    """
+    Walk Portfolio → fund folders → company folders, find each company's
+    'Investor Reporting(s)' subfolder, and link it to the matching portal
+    company (sets company.drive_folder_url). Returns a summary dict.
+    """
+    from sqlalchemy import select as _select
+    from ..models import Company
+    from .settings_service import get_portfolio_drive_folder
+
+    root_url = get_portfolio_drive_folder(db)
+    if not root_url:
+        return {"status": "error",
+                "message": "Portfolio Drive folder is not set. Paste its URL first."}
+    m = _FOLDER_ID_RE.search(root_url)
+    if not m:
+        return {"status": "error", "message": "Could not parse the Portfolio folder URL."}
+    root_id = m.group(1)
+
+    token = _service_account_token(db)
+    if not token:
+        return {"status": "error",
+                "message": ("Google service account is not configured. Set "
+                            "GOOGLE_SERVICE_ACCOUNT_JSON and share the Portfolio "
+                            "folder with the service-account email.")}
+    headers = {"Authorization": f"Bearer {token}"}
+
+    funds = _child_folders(root_id, headers)
+    if not funds:
+        return {"status": "error",
+                "message": ("No fund folders found under the Portfolio folder — "
+                            "check the URL and that the folder is shared with the "
+                            "service account.")}
+
+    companies = list(db.scalars(_select(Company)).all())
+    by_name = {c.name.strip().lower(): c for c in companies}
+
+    linked, already, no_ir, unmatched = [], [], [], []
+    for fund in funds:
+        for comp_folder in _child_folders(fund["id"], headers):
+            folder_name = comp_folder["name"].strip()
+            ir = next((f for f in _child_folders(comp_folder["id"], headers)
+                       if _IR_NAME_RE.search(f["name"])), None)
+            if ir is None:
+                no_ir.append(f"{fund['name']}/{folder_name}")
+                continue
+            company = by_name.get(folder_name.lower())
+            if company is None:
+                # tolerate simple suffix differences (e.g. "Acme GmbH" vs "Acme")
+                company = next(
+                    (c for n, c in by_name.items()
+                     if n.startswith(folder_name.lower()) or folder_name.lower().startswith(n)),
+                    None,
+                )
+            if company is None:
+                unmatched.append(f"{fund['name']}/{folder_name}")
+                continue
+            url = f"https://drive.google.com/drive/folders/{ir['id']}"
+            if company.drive_folder_url == url:
+                already.append(company.name)
+            else:
+                company.drive_folder_url = url
+                linked.append(company.name)
+    db.commit()
+
+    msg = (f"Linked {len(linked)} Investor Reporting folder(s)"
+           f"{', ' + str(len(already)) + ' already linked' if already else ''}.")
+    if unmatched:
+        msg += f" No portal company matches: {', '.join(sorted(unmatched)[:8])}."
+    if no_ir:
+        msg += f" No Investor Reporting subfolder in: {', '.join(sorted(no_ir)[:8])}."
+    return {"status": "ok", "message": msg, "linked": linked,
+            "already": already, "unmatched": unmatched, "no_ir": no_ir}

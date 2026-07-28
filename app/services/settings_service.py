@@ -119,3 +119,23 @@ def mask_key(key: str | None) -> str | None:
         return None
     visible = key[-4:] if len(key) >= 4 else key
     return f"{'*' * min(24, max(8, len(key) - 4))}...{visible}"
+
+
+# ---------------------------------------------------------------------------
+# Portfolio Drive root (the "Portfolio" folder that contains the fund folders)
+# ---------------------------------------------------------------------------
+
+PORTFOLIO_DRIVE_FOLDER = "portfolio_drive_folder_url"
+
+
+def get_portfolio_drive_folder(db: Session) -> str | None:
+    import os
+    return _get(PORTFOLIO_DRIVE_FOLDER, db) or os.environ.get("PORTFOLIO_DRIVE_FOLDER_URL") or None
+
+
+def set_portfolio_drive_folder(value: str | None, db: Session) -> None:
+    v = (value or "").strip()
+    if v:
+        _set(PORTFOLIO_DRIVE_FOLDER, v, db)
+    else:
+        _delete(PORTFOLIO_DRIVE_FOLDER, db)
