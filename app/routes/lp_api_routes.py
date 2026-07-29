@@ -1369,6 +1369,15 @@ def _portfolio_company_names(db: Session) -> set[str]:
     return {(n or "").strip().lower() for n in rows}
 
 
+def _is_portfolio_company(name: str, db: Session) -> bool:
+    """Tolerant name match against portfolio ventures ("Almetra" ~ "Almetra GmbH")."""
+    n = name.strip().lower()
+    for v in _portfolio_company_names(db):
+        if n == v or n.startswith(v) or v.startswith(n):
+            return True
+    return False
+
+
 def _kpi_periods_for_company(company, db: Session) -> list[dict]:
     from ..models import Document, DocumentCategory, Extraction
     from ..standard_kpis import STANDARD_KPIS
@@ -1427,10 +1436,9 @@ def api_kpi_companies(
 ):
     """Portfolio companies that have at least one quarterly report with KPIs."""
     from ..models import Company
-    portfolio = _portfolio_company_names(db)
     out = []
     for company in db.scalars(select(Company).order_by(Company.name)).all():
-        if company.name.strip().lower() not in portfolio:
+        if not _is_portfolio_company(company.name, db):
             continue
         if _kpi_periods_for_company(company, db):
             out.append(company.name)
@@ -1449,6 +1457,6 @@ def api_company_kpis(
     if not row:
         raise HTTPException(status_code=404, detail="Company not found.")
     # LP scope: only companies that are Portfolio-stage in the CRM
-    if row.name.strip().lower() not in _portfolio_company_names(db):
+    if not _is_portfolio_company(row.name, db):
         raise HTTPException(status_code=403, detail="Not a portfolio company.")
     return {"company": row.name, "periods": _kpi_periods_for_company(row, db)}
