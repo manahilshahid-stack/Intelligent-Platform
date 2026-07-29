@@ -110,6 +110,15 @@ _MONTH_NAMES = {m.lower(): i + 1 for i, m in enumerate(
      "august", "september", "october", "november", "december"])}
 _ORDINAL_Q = {"first": 1, "second": 2, "third": 3, "fourth": 4}
 
+# Comparison/trend intent: when present, all periods stay in relevance order
+# so cross-quarter comparisons have material from every period.
+_COMPARISON_RE = re.compile(
+    r"\b(compare|comparison|compared|vs\.?|versus|trend|trends|over time|"
+    r"history|historical|evolution|change[ds]? since|growth since|"
+    r"quarter[- ]over[- ]quarter|qoq|year[- ]over[- ]year|yoy|previous quarter|last few quarters)\b",
+    re.I,
+)
+
 
 def parse_query_period(query: str) -> dict | None:
     """Detect an explicit reporting period in the question.
@@ -321,21 +330,39 @@ def retrieve_relevant_chunks(
 
     # Retrieve a larger pool so period-aware re-ranking has room to work.
     asked_period = parse_query_period(query)
-    pool = limit * 3 if asked_period else limit
+    pool = limit * 3
     scored = _hybrid_rank(db, Chunk, stmt, query, query_vec, pool, "chunks", pg_extra, pg_params)
 
     if not scored:
         return []
 
     # ── Period-aware preference ────────────────────────────────────────────────
-    # When the question names a period ("Q2 2026", "March 2026"), surface chunks
-    # from that reporting period first (stable within each group). If nothing
-    # matches, keep the original ranking rather than returning nothing.
+    # Three cases:
+    #  1. Question names a period ("Q2 2026") → that period's chunks first.
+    #  2. Comparison/trend intent → keep all periods in relevance order.
+    #  3. Otherwise → each company's LATEST reporting period first, so current
+    #     data always outranks stale data; older chunks stay available below.
     if asked_period:
         matching = [(s, c) for s, c in scored if _period_matches(c, asked_period)]
         if matching:
             others = [(s, c) for s, c in scored if not _period_matches(c, asked_period)]
             scored = matching + others
+    elif not _COMPARISON_RE.search(query):
+        # Latest reporting period per company within the pool
+        latest: dict[int, tuple] = {}
+        for _, c in scored:
+            if c.reporting_year:
+                key = (c.reporting_year, c.reporting_quarter or 0, c.reporting_month or 0)
+                if key > latest.get(c.company_id, (0, 0, 0)):
+                    latest[c.company_id] = key
+        def _is_current(c) -> bool:
+            if not c.reporting_year:
+                return True   # non-period documents keep their relevance rank
+            return (c.reporting_year, c.reporting_quarter or 0,
+                    c.reporting_month or 0) == latest.get(c.company_id)
+        current = [(s, c) for s, c in scored if _is_current(c)]
+        older = [(s, c) for s, c in scored if not _is_current(c)]
+        scored = current + older
 
     # ── Pre-load companies and documents for ranked chunks (avoid N+1) ─────────
     ranked_chunks = [c for _, c in scored]
