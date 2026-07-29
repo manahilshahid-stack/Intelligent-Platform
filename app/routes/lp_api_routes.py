@@ -1349,3 +1349,106 @@ def api_message_feedback(
         db.commit()
 
     return {"ok": True, "rated": body.rating}
+
+
+# ---------------------------------------------------------------------------
+# LP KPI dashboard
+#
+# Serves the standard KPIs extracted from quarterly reports, verbatim from the
+# extraction JSON (values + the exact source quote from the document). No LLM
+# runs at read time, so the dashboard cannot invent numbers. Scope: portfolio
+# companies only, LP Bearer-token auth.
+# ---------------------------------------------------------------------------
+
+def _portfolio_company_names(db: Session) -> set[str]:
+    from sqlalchemy import func as _func
+    from ..models import CrmVenture
+    rows = db.scalars(
+        select(CrmVenture.name).where(_func.lower(CrmVenture.stage).contains("portfolio"))
+    ).all()
+    return {(n or "").strip().lower() for n in rows}
+
+
+def _kpi_periods_for_company(company, db: Session) -> list[dict]:
+    from ..models import Document, DocumentCategory, Extraction
+    from ..standard_kpis import STANDARD_KPIS
+
+    docs = db.scalars(
+        select(Document).where(
+            Document.company_id == company.id,
+            Document.document_category == DocumentCategory.quarterly_reporting,
+            Document.reporting_year.is_not(None),
+        ).order_by(Document.reporting_year, Document.reporting_quarter)
+    ).all()
+
+    periods: list[dict] = []
+    for doc in docs:
+        extraction = db.scalar(
+            select(Extraction)
+            .where(Extraction.document_id == doc.id)
+            .order_by(Extraction.created_at.desc())
+            .limit(1)
+        )
+        if not extraction:
+            continue
+        raw = extraction.corrected_json or extraction.extracted_json
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except Exception:
+            continue
+        kpis = {}
+        for kdef in STANDARD_KPIS:
+            block = data.get(kdef.key)
+            if isinstance(block, dict) and block.get("value") is not None:
+                kpis[kdef.key] = {
+                    "label": kdef.label,
+                    "type": kdef.field_type,
+                    "value": block.get("value"),
+                    "currency": block.get("currency"),
+                    "source_text": block.get("source_text"),
+                }
+        if kpis:
+            periods.append({
+                "period": doc.reporting_period,
+                "year": doc.reporting_year,
+                "quarter": doc.reporting_quarter,
+                "uploaded": doc.created_at.strftime("%d %b %Y"),
+                "kpis": kpis,
+            })
+    return periods
+
+
+@router.get("/kpis/companies")
+def api_kpi_companies(
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Portfolio companies that have at least one quarterly report with KPIs."""
+    from ..models import Company
+    portfolio = _portfolio_company_names(db)
+    out = []
+    for company in db.scalars(select(Company).order_by(Company.name)).all():
+        if company.name.strip().lower() not in portfolio:
+            continue
+        if _kpi_periods_for_company(company, db):
+            out.append(company.name)
+    return {"companies": out}
+
+
+@router.get("/kpis")
+def api_company_kpis(
+    company: str,
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+):
+    """KPI history for one portfolio company (oldest → newest period)."""
+    from ..models import Company
+    row = db.scalar(select(Company).where(Company.name.ilike(company.strip())))
+    if not row:
+        raise HTTPException(status_code=404, detail="Company not found.")
+    # LP scope: only companies that are Portfolio-stage in the CRM
+    if row.name.strip().lower() not in _portfolio_company_names(db):
+        raise HTTPException(status_code=403, detail="Not a portfolio company.")
+    return {"company": row.name, "periods": _kpi_periods_for_company(row, db)}

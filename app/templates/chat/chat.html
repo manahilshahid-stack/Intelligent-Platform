@@ -367,6 +367,81 @@
     </div>
     {% endif %}
 
+    <div class="sidebar-card" id="kpi-card" style="display:none">
+      <h3 id="kpi-title">Company KPIs</h3>
+      <div id="kpi-period" style="font-size:0.72rem;color:#9ca3af;margin-bottom:0.6rem"></div>
+      <div id="kpi-rows"></div>
+      <div id="kpi-footer" style="font-size:0.7rem;color:#9ca3af;margin-top:0.6rem;border-top:1px solid #f0f0f0;padding-top:0.5rem"></div>
+    </div>
+    <script>
+    (function () {
+      var KPI_POLL_MS = 60000;
+      var card = document.getElementById('kpi-card');
+
+      function fmt(k) {
+        var v = k.value;
+        if (typeof v !== 'number') return String(v);
+        var s;
+        if (Math.abs(v) >= 1e6) s = (v / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+        else if (Math.abs(v) >= 1e3) s = (v / 1e3).toFixed(0) + 'k';
+        else s = String(v);
+        return k.currency ? s + ' ' + k.currency : s;
+      }
+
+      function render(data) {
+        if (!data.periods.length) { card.style.display = 'none'; return; }
+        var latest = data.periods[data.periods.length - 1];
+        var prev = data.periods.length > 1 ? data.periods[data.periods.length - 2] : null;
+        document.getElementById('kpi-title').textContent = data.company + ' — KPIs';
+        document.getElementById('kpi-period').textContent =
+          'As reported for ' + (latest.period || '—') +
+          (prev ? ' (vs ' + prev.period + ')' : '');
+        var rows = '';
+        Object.keys(latest.kpis).forEach(function (key) {
+          var k = latest.kpis[key];
+          var p = prev && prev.kpis[key] ? prev.kpis[key] : null;
+          rows += '<div title="' + (k.source_text || '').replace(/"/g, '&quot;') + '"' +
+            ' style="display:flex;justify-content:space-between;gap:0.5rem;' +
+            'font-size:0.78rem;padding:0.28rem 0;border-bottom:1px solid #f7f7f7;cursor:help">' +
+            '<span style="color:#6b7280">' + k.label + '</span>' +
+            '<span style="text-align:right;font-weight:600">' + fmt(k) +
+            (p ? '<br><span style="font-weight:400;color:#9ca3af;font-size:0.68rem">' +
+                 fmt(p) + ' in ' + prev.period + '</span>' : '') +
+            '</span></div>';
+        });
+        document.getElementById('kpi-rows').innerHTML = rows ||
+          '<div style="font-size:0.75rem;color:#9ca3af">No KPIs extracted yet.</div>';
+        document.getElementById('kpi-footer').textContent =
+          'Source: ' + latest.doc_title + ' (uploaded ' + latest.uploaded + '). ' +
+          'Values verbatim from the report — hover a row for the source quote. Auto-refreshes.';
+        card.style.display = '';
+      }
+
+      function currentCompanyId() {
+        var sel = document.getElementById('company-select');
+        if (sel && sel.value) return sel.value;
+        return card.getAttribute('data-user-company') || null;
+      }
+
+      function refresh() {
+        var cid = currentCompanyId();
+        if (!cid) { card.style.display = 'none'; return; }
+        fetch('/api/companies/' + cid + '/kpis')
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (d) { if (d) render(d); else card.style.display = 'none'; })
+          .catch(function () { /* keep last state */ });
+      }
+
+      {% if user.role.value == "user" and user_company %}
+      card.setAttribute('data-user-company', '{{ user_company.id }}');
+      {% endif %}
+      refresh();
+      setInterval(refresh, KPI_POLL_MS);
+      var sel = document.getElementById('company-select');
+      if (sel) sel.addEventListener('change', function () { setTimeout(refresh, 50); });
+    })();
+    </script>
+
     <div class="sidebar-card">
       <h3>Tips</h3>
       <ul style="font-size:0.8rem;color:#666;line-height:1.7;padding-left:1.1rem;margin:0">
