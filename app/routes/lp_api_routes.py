@@ -367,7 +367,7 @@ def _venture_to_dict(v, index: int = 0) -> dict:
         "stage": getattr(v, "funding_stage", None) or "Early Stage",
         "founders": [],
         "website": website,
-        "status": "Active",
+        "status": "Exited" if "exit" in (v.stage or "").lower() else "Active",
         "logo": (v.name or "?")[0].upper(),
         "color": _COLORS[index % 4],
         "hq": "",
@@ -609,9 +609,13 @@ def api_get_companies(
 ):
     """Return all portfolio companies."""
     from ..models import CrmVenture
+    from sqlalchemy import or_
     ventures = db.scalars(
         select(CrmVenture)
-        .where(func.lower(CrmVenture.stage).contains("portfolio"))
+        .where(or_(
+            func.lower(CrmVenture.stage).contains("portfolio"),
+            func.lower(CrmVenture.stage).contains("exit"),
+        ))
         .where(CrmVenture.name.is_not(None))
         .order_by(CrmVenture.name)
     ).all()
@@ -1349,115 +1353,3 @@ def api_message_feedback(
         db.commit()
 
     return {"ok": True, "rated": body.rating}
-
-
-# ---------------------------------------------------------------------------
-# LP KPI dashboard
-#
-# Serves the standard KPIs extracted from quarterly reports, verbatim from the
-# extraction JSON (values + the exact source quote from the document). No LLM
-# runs at read time, so the dashboard cannot invent numbers. Scope: portfolio
-# companies only, LP Bearer-token auth.
-# ---------------------------------------------------------------------------
-
-def _portfolio_company_names(db: Session) -> set[str]:
-    from sqlalchemy import func as _func
-    from ..models import CrmVenture
-    rows = db.scalars(
-        select(CrmVenture.name).where(_func.lower(CrmVenture.stage).contains("portfolio"))
-    ).all()
-    return {(n or "").strip().lower() for n in rows}
-
-
-def _is_portfolio_company(name: str, db: Session) -> bool:
-    """Tolerant name match against portfolio ventures ("Almetra" ~ "Almetra GmbH")."""
-    n = name.strip().lower()
-    for v in _portfolio_company_names(db):
-        if n == v or n.startswith(v) or v.startswith(n):
-            return True
-    return False
-
-
-def _kpi_periods_for_company(company, db: Session) -> list[dict]:
-    from ..models import Document, DocumentCategory, Extraction
-    from ..standard_kpis import STANDARD_KPIS
-
-    docs = db.scalars(
-        select(Document).where(
-            Document.company_id == company.id,
-            Document.is_regular_reporting == True,  # noqa: E712 — quarterly AND monthly reports
-            Document.reporting_year.is_not(None),
-        ).order_by(Document.reporting_year, Document.reporting_quarter.nulls_first(), Document.reporting_month.nulls_first())
-    ).all()
-
-    periods: list[dict] = []
-    for doc in docs:
-        extraction = db.scalar(
-            select(Extraction)
-            .where(Extraction.document_id == doc.id)
-            .order_by(Extraction.created_at.desc())
-            .limit(1)
-        )
-        if not extraction:
-            continue
-        raw = extraction.corrected_json or extraction.extracted_json
-        if not raw:
-            continue
-        try:
-            data = json.loads(raw)
-        except Exception:
-            continue
-        kpis = {}
-        for kdef in STANDARD_KPIS:
-            block = data.get(kdef.key)
-            if isinstance(block, dict) and block.get("value") is not None:
-                kpis[kdef.key] = {
-                    "label": kdef.label,
-                    "type": kdef.field_type,
-                    "value": block.get("value"),
-                    "currency": block.get("currency"),
-                    "source_text": block.get("source_text"),
-                }
-        if kpis:
-            periods.append({
-                "period": doc.reporting_period,
-                "year": doc.reporting_year,
-                "quarter": doc.reporting_quarter,
-                "month": doc.reporting_month,
-                "uploaded": doc.created_at.strftime("%d %b %Y"),
-                "kpis": kpis,
-            })
-    return periods
-
-
-@router.get("/kpis/companies")
-def api_kpi_companies(
-    current_user: LPUser = Depends(_get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Portfolio companies that have at least one quarterly report with KPIs."""
-    from ..models import Company
-    out = []
-    for company in db.scalars(select(Company).order_by(Company.name)).all():
-        if not _is_portfolio_company(company.name, db):
-            continue
-        if _kpi_periods_for_company(company, db):
-            out.append(company.name)
-    return {"companies": out}
-
-
-@router.get("/kpis")
-def api_company_kpis(
-    company: str,
-    current_user: LPUser = Depends(_get_current_user),
-    db: Session = Depends(get_db),
-):
-    """KPI history for one portfolio company (oldest → newest period)."""
-    from ..models import Company
-    row = db.scalar(select(Company).where(Company.name.ilike(company.strip())))
-    if not row:
-        raise HTTPException(status_code=404, detail="Company not found.")
-    # LP scope: only companies that are Portfolio-stage in the CRM
-    if not _is_portfolio_company(row.name, db):
-        raise HTTPException(status_code=403, detail="Not a portfolio company.")
-    return {"company": row.name, "periods": _kpi_periods_for_company(row, db)}

@@ -43,8 +43,17 @@ log = logging.getLogger(__name__)
 _TARGET = 1400
 _HARD_MAX = 2200          # never exceed (tables excepted)
 _MIN_CHUNK = 200          # merge tiny trailing chunks into the previous one
-_MAX_LLM_DOC_CHARS = 60_000   # cap doc text sent for enrichment/summary
-_MAX_CHUNKS_ENRICH = 60       # cap chunks enriched per document
+# Context caps for the two LLM calls per document. Kept deliberately small:
+# these calls run for EVERY synced file, so token usage scales with the whole
+# Drive backfill. 12k chars ≈ 3k tokens covers the meat of a monthly report.
+_MAX_LLM_DOC_CHARS = 12_000
+_MAX_CHUNKS_ENRICH = 40
+
+# Set INDEXING_LLM_ENRICHMENT=0 on Railway to skip both LLM calls entirely —
+# chunks still get their structural context headers + period metadata, which
+# carry most of the retrieval quality. Good mode for large backfills.
+import os as _os
+_ENRICHMENT_ENABLED = _os.environ.get("INDEXING_LLM_ENRICHMENT", "1") not in ("0", "false", "no")
 
 
 # ---------------------------------------------------------------------------
@@ -196,7 +205,7 @@ def _llm(messages: list[dict], db) -> str | None:
         api_key = get_openrouter_api_key(db)
         if not api_key:
             return None
-        return _call_openrouter(messages, api_key=api_key, model=_settings.openrouter_chat_model)
+        return _call_openrouter(messages, api_key=api_key, model=_settings.openrouter_pipeline_model)
     except Exception as exc:
         log.warning("document_indexer: LLM call failed (%s)", exc)
         return None
@@ -287,11 +296,12 @@ def index_document(document_id: int, db) -> int:
     if not chunks:
         raise ValueError(f"Document {document_id}: chunking produced no text.")
 
-    # 2. contextual enrichment (best-effort)
-    enrich_chunks_llm(doc_header, raw, chunks, db)
-
-    # 3. document summary (best-effort)
-    summary = summarize_document_llm(doc_header, raw, db)
+    # 2 + 3. LLM enrichment + summary (best-effort; disabled via
+    # INDEXING_LLM_ENRICHMENT=0 to save credits on bulk backfills)
+    summary = None
+    if _ENRICHMENT_ENABLED:
+        enrich_chunks_llm(doc_header, raw, chunks, db)
+        summary = summarize_document_llm(doc_header, raw, db)
 
     # Build embedding texts: header + situating context + body
     texts: list[str] = []

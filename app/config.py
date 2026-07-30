@@ -28,6 +28,12 @@ class Settings:
     openrouter_chat_model: str = os.environ.get(
         "OPENROUTER_CHAT_MODEL", "openai/gpt-4o-mini"
     )
+    # Cheap model for background document processing (KPI extraction, chunk
+    # enrichment, summaries). Runs 3x per synced file — keep it inexpensive.
+    # Response generation in chats uses openrouter_chat_model above.
+    openrouter_pipeline_model: str = os.environ.get(
+        "OPENROUTER_PIPELINE_MODEL", "openai/gpt-4o-mini"
+    )
     openrouter_embedding_model: str = os.environ.get(
         "OPENROUTER_EMBEDDING_MODEL", "openai/text-embedding-3-small"
     )

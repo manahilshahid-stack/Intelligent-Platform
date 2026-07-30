@@ -247,7 +247,7 @@ def run_portfolio_extraction(document_id: int, db: Session) -> Extraction:
     raw_response: str | None = None
     try:
         from ..config import settings as _settings
-        raw_response = _call_openrouter(messages, api_key=api_key, model=_settings.openrouter_chat_model)
+        raw_response = _call_openrouter(messages, api_key=api_key, model=_settings.openrouter_pipeline_model)
     except RuntimeError as exc:
         error = str(exc)
         log.error("OpenRouter call failed for document %d: %s", document_id, error)
