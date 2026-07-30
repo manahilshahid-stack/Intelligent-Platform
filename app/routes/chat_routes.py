@@ -312,9 +312,9 @@ def company_kpis(
     docs = db.scalars(
         select(Document).where(
             Document.company_id == company_id,
-            Document.document_category == DocumentCategory.quarterly_reporting,
+            Document.is_regular_reporting == True,  # noqa: E712 — quarterly AND monthly reports
             Document.reporting_year.is_not(None),
-        ).order_by(Document.reporting_year, Document.reporting_quarter)
+        ).order_by(Document.reporting_year, Document.reporting_quarter.nulls_first(), Document.reporting_month.nulls_first())
     ).all()
 
     periods = []
@@ -352,6 +352,7 @@ def company_kpis(
             "period": doc.reporting_period,
             "year": doc.reporting_year,
             "quarter": doc.reporting_quarter,
+            "month": doc.reporting_month,
             "doc_id": doc.id,
             "doc_title": doc.title,
             "uploaded": doc.created_at.strftime("%d %b %Y"),

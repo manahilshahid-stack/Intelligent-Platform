@@ -587,6 +587,25 @@ def _guess_quarter_period(filename: str) -> tuple[int, int] | None:
     return None
 
 
+_MONTHLY_RE = re.compile(r"\b(20\d{2})[\s._-]{0,2}(0[1-9]|1[0-2])\b")  # 2024-10 / 2024_10 / 2024.10
+
+
+def _guess_period(filename: str) -> dict | None:
+    """Detect the reporting period from a filename.
+
+    Returns {"year", "quarter"} for quarterly reports (e.g. "Acme Q2 2026.pdf")
+    or {"year", "month"} for monthly ones (e.g. "2024-10 - Monthly Investor
+    Report.pdf"). None when no period is recognisable.
+    """
+    q = _guess_quarter_period(filename)
+    if q:
+        return {"year": q[0], "quarter": q[1]}
+    m = _MONTHLY_RE.search(filename)
+    if m:
+        return {"year": int(m.group(1)), "month": int(m.group(2))}
+    return None
+
+
 def _sync_company_drive_folder_impl(company, db, uploaded_by_id: int) -> dict:
     """
     Pull new files from the company's linked Drive folder into its document bucket.
@@ -670,6 +689,31 @@ def _sync_company_drive_folder_impl(company, db, uploaded_by_id: int) -> dict:
             data = r.content
             digest = hashlib.sha256(data).hexdigest()
             if digest in existing_hashes:
+                # Self-heal: earlier imports may have missed the period
+                # (monthly filenames weren't recognised before).
+                period = _guess_period(name)
+                if period:
+                    existing_doc = db.scalar(
+                        _select(Document).where(
+                            Document.company_id == company.id,
+                            Document.sha256 == digest,
+                            Document.reporting_period.is_(None),
+                        )
+                    )
+                    if existing_doc:
+                        if "quarter" in period:
+                            existing_doc.document_category = DocumentCategory.quarterly_reporting
+                            existing_doc.reporting_period = f"{period['year']}-Q{period['quarter']}"
+                            existing_doc.reporting_quarter = period["quarter"]
+                        else:
+                            existing_doc.document_category = DocumentCategory.monthly_reporting
+                            existing_doc.reporting_period = f"{period['year']}-{period['month']:02d}"
+                            existing_doc.reporting_month = period["month"]
+                        existing_doc.is_regular_reporting = True
+                        existing_doc.reporting_year = period["year"]
+                        db.commit()
+                        log.info("drive sync: re-classified %s as %s",
+                                 name[:60], existing_doc.reporting_period)
                 skipped += 1
                 continue
 
@@ -685,7 +729,15 @@ def _sync_company_drive_folder_impl(company, db, uploaded_by_id: int) -> dict:
                 extraction_status = ExtractionStatus.failed
                 extraction_error = "No usable text extracted."
 
-            period = _guess_quarter_period(name)
+            period = _guess_period(name)
+            if period and "quarter" in period:
+                category = DocumentCategory.quarterly_reporting
+                label = f"{period['year']}-Q{period['quarter']}"
+            elif period and "month" in period:
+                category = DocumentCategory.monthly_reporting
+                label = f"{period['year']}-{period['month']:02d}"
+            else:
+                category, label = DocumentCategory.other, None
             doc = Document(
                 company_id=company.id,
                 uploaded_by_id=uploaded_by_id,
@@ -700,14 +752,12 @@ def _sync_company_drive_folder_impl(company, db, uploaded_by_id: int) -> dict:
                 extraction_status=extraction_status,
                 extraction_error=extraction_error,
                 review_status=ReviewStatus.pending,
-                document_category=(
-                    DocumentCategory.quarterly_reporting if period
-                    else DocumentCategory.other
-                ),
+                document_category=category,
                 is_regular_reporting=bool(period),
-                reporting_period=f"{period[0]}-Q{period[1]}" if period else None,
-                reporting_year=period[0] if period else None,
-                reporting_quarter=period[1] if period else None,
+                reporting_period=label,
+                reporting_year=period.get("year") if period else None,
+                reporting_quarter=period.get("quarter") if period else None,
+                reporting_month=period.get("month") if period else None,
             )
             db.add(doc)
             db.commit()
