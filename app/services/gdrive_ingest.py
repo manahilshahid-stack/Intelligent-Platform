@@ -662,18 +662,39 @@ def _sync_company_drive_folder_impl(company, db, uploaded_by_id: int) -> dict:
 
     added = skipped = failed = 0
     err_samples: list[str] = []
+    unsupported: list[str] = []
+
+    _NATIVE_EXPORT = {
+        "application/vnd.google-apps.document": ("text/plain", "txt"),
+        "application/vnd.google-apps.presentation": ("text/plain", "txt"),
+        "application/vnd.google-apps.spreadsheet": ("text/csv", "csv"),
+    }
+
     for f in files:
         name = f.get("name", "")
-        ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-        if ext not in _SYNC_EXTENSIONS:
-            skipped += 1
-            continue
+        mime = f.get("mimeType", "")
+        native = _NATIVE_EXPORT.get(mime)
+        if native:
+            ext = native[1]                      # Google Doc/Slides/Sheet → exported text
+        else:
+            ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+            if ext not in _SYNC_EXTENSIONS:
+                unsupported.append(name[:60])
+                skipped += 1
+                continue
         try:
-            r = httpx.get(
-                f"https://www.googleapis.com/drive/v3/files/{f['id']}",
-                params={"alt": "media", "supportsAllDrives": "true"},
-                headers=headers, follow_redirects=True, timeout=_TIMEOUT,
-            )
+            if native:
+                r = httpx.get(
+                    f"https://www.googleapis.com/drive/v3/files/{f['id']}/export",
+                    params={"mimeType": native[0], "supportsAllDrives": "true"},
+                    headers=headers, follow_redirects=True, timeout=_TIMEOUT,
+                )
+            else:
+                r = httpx.get(
+                    f"https://www.googleapis.com/drive/v3/files/{f['id']}",
+                    params={"alt": "media", "supportsAllDrives": "true"},
+                    headers=headers, follow_redirects=True, timeout=_TIMEOUT,
+                )
             if r.status_code != 200:
                 failed += 1
                 reason = ""
@@ -720,8 +741,9 @@ def _sync_company_drive_folder_impl(company, db, uploaded_by_id: int) -> dict:
             raw_text = None
             extraction_status = ExtractionStatus.complete
             extraction_error = None
+            fname_for_extract = name if not native else f"{name}.{ext}"
             try:
-                raw_text = extract_text(name, data)
+                raw_text = extract_text(fname_for_extract, data)
             except Exception as exc:
                 extraction_status = ExtractionStatus.failed
                 extraction_error = str(exc)
@@ -784,6 +806,9 @@ def _sync_company_drive_folder_impl(company, db, uploaded_by_id: int) -> dict:
             failed += 1
 
     message = f"Sync complete: {added} added, {skipped} skipped, {failed} failed."
+    if unsupported:
+        message += (f" {len(unsupported)} unsupported file type(s) skipped, "
+                    f"e.g. '{unsupported[0]}'.")
     if err_samples:
         message += f" First error — {err_samples[0]}"
         if "cannotDownloadFile" in message or "downloadRestricted" in message or "exportsDisabled" in message:

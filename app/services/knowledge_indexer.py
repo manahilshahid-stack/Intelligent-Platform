@@ -68,7 +68,7 @@ def sanitize_text_llm(raw_text: str, api_key: str) -> str | None:
         "X-Title": "Portfolio Intelligence Platform",
     }
     payload = {
-        "model": _cfg.openrouter_chat_model,
+        "model": _cfg.openrouter_pipeline_model,  # cheap: runs per CRM doc in nightly refresh
         "messages": [
             {"role": "system", "content": _SANITIZE_SYSTEM},
             {"role": "user", "content": raw_text[:8000]},
