@@ -332,6 +332,9 @@ class Document(Base):
         default=DocumentCategory.other,
     )
     is_regular_reporting: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # True only for documents from the curated LP Reporting folder — the sole
+    # portfolio-content source the LP-facing chat may read.
+    lp_visible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     reporting_period: Mapped[str | None] = mapped_column(String(20))   # display label e.g. "2024-Q1"
     reporting_year: Mapped[int | None] = mapped_column(Integer)
     reporting_month: Mapped[int | None] = mapped_column(Integer)       # 1-12
@@ -415,6 +418,8 @@ class Chunk(Base):
     # JSON-serialised list[float]; NULL until embedding is generated
     embedding: Mapped[str | None] = mapped_column(Text, deferred=True)
     approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Copied from the parent document: True only for curated LP Reporting chunks
+    lp_visible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Denormalised reporting period (copied from the document) for cheap
     # SQL filtering/boosting at retrieval time.
     reporting_year: Mapped[int | None] = mapped_column(Integer)

@@ -485,6 +485,7 @@ def embed_approved_extraction(extraction_id: int, db: "Session") -> int:
             text=text,
             embedding=json.dumps(vector),
             approved=True,
+            lp_visible=bool(doc.lp_visible) if doc else False,
         )
         db.add(chunk)
         created.append((chunk, vector))

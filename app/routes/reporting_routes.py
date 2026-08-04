@@ -49,7 +49,7 @@ def admin_reporting_tracker(
     year = year or cur_year
     quarter = quarter or cur_q
 
-    companies = list(db.scalars(select(Company).order_by(Company.name)).all())
+    companies = list(db.scalars(select(Company).where(Company.slug != "lp-reporting").order_by(Company.name)).all())
     rows = []
     for c in companies:
         state = status_for(db, c, year, quarter)
@@ -212,7 +212,7 @@ def fund_reports_list(
     reports = list(db.scalars(
         select(FundReport).order_by(FundReport.year.desc(), FundReport.quarter.desc())
     ).all())
-    companies = list(db.scalars(select(Company).order_by(Company.name)).all())
+    companies = list(db.scalars(select(Company).where(Company.slug != "lp-reporting").order_by(Company.name)).all())
     total_companies = len(companies)
 
     rows = []
@@ -282,7 +282,7 @@ def fund_report_detail(
     if not report:
         raise HTTPException(status_code=404, detail="Fund report not found.")
 
-    companies = list(db.scalars(select(Company).order_by(Company.name)).all())
+    companies = list(db.scalars(select(Company).where(Company.slug != "lp-reporting").order_by(Company.name)).all())
     submitted_ids, docs_by_company = _quarter_submissions(db, report.year, report.quarter)
 
     company_rows = [

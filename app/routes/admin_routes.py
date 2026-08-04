@@ -73,12 +73,17 @@ def admin_home(
 # Companies
 # ---------------------------------------------------------------------------
 
+LP_HIDDEN_SLUG = "lp-reporting"
+
+
 def _companies_overview(db: Session) -> list[dict]:
     """Companies with doc counts + latest report period, for the buckets list."""
     from sqlalchemy import func
     from ..models import DocumentCategory
 
-    companies = db.scalars(select(Company).order_by(Company.name)).all()
+    companies = db.scalars(
+        select(Company).where(Company.slug != LP_HIDDEN_SLUG).order_by(Company.name)
+    ).all()
     doc_counts = dict(
         db.execute(
             select(Document.company_id, func.count(Document.id))
@@ -111,13 +116,53 @@ def companies_page(
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    from ..services.settings_service import get_portfolio_drive_folder
+    from ..services.settings_service import get_lp_reporting_folder, get_portfolio_drive_folder
+    lp_company = db.scalar(select(Company).where(Company.slug == LP_HIDDEN_SLUG))
     return _render(request, "admin/companies.html", {
         "user": admin,
         "rows": _companies_overview(db),
         "portfolio_drive_folder": get_portfolio_drive_folder(db),
+        "lp_reporting_folder": get_lp_reporting_folder(db),
+        "lp_company": lp_company,
         "error": None,
     })
+
+
+LP_REPORTING_SLUG = "lp-reporting"
+
+
+@router.post("/lp-reporting", response_class=HTMLResponse)
+def save_lp_reporting_folder(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+    lp_folder_url: Annotated[str, Form()] = "",
+):
+    """Save the curated LP Reporting folder — the ONLY portfolio-content source
+    the LP-facing chat reads — and sync it in the background."""
+    from ..services.settings_service import set_lp_reporting_folder
+
+    url = lp_folder_url.strip()
+    set_lp_reporting_folder(url, db)
+
+    company = db.scalar(select(Company).where(Company.slug == LP_REPORTING_SLUG))
+    if company is None:
+        company = Company(
+            name="LP Reporting", slug=LP_REPORTING_SLUG,
+            description="Curated quarterly reports for the LP platform (fund-level).",
+        )
+        db.add(company)
+    company.drive_folder_url = url or None
+    db.commit()
+
+    if url:
+        background_tasks.add_task(_sync_drive_background, company.id, admin.id)
+        msg = "LP+Reporting+folder+saved+—+sync+started,+reports+will+be+LP-visible+shortly."
+    else:
+        msg = "LP+Reporting+folder+unlinked."
+    return RedirectResponse(f"/admin/companies?success={msg}",
+                            status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/companies/discover-drive", response_class=HTMLResponse)

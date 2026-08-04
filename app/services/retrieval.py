@@ -263,6 +263,7 @@ def retrieve_relevant_chunks(
     filters: dict | None = None,
     limit: int = 10,
     include_crm: bool = True,   # NEW: allow callers to get portfolio-only results
+    lp_only: bool = False,      # LP wall: restrict to curated LP Reporting chunks
 ) -> list[ChunkResult]:
     """
     Embed *query*, score all approved chunks with stored embeddings by cosine
@@ -312,6 +313,10 @@ def retrieve_relevant_chunks(
         Chunk.embedding.is_not(None),
     )
 
+    # LP wall: LPs only ever read chunks from the curated LP Reporting folder.
+    if lp_only:
+        stmt = stmt.where(Chunk.lp_visible == True)  # noqa: E712
+
     if not is_admin:
         stmt = stmt.where(Chunk.company_id == user.company_id)
 
@@ -320,9 +325,12 @@ def retrieve_relevant_chunks(
 
     # ── Hybrid rank: vector + keyword fused with RRF ───────────────────────────
     pg_extra, pg_params = "", {}
+    if lp_only:
+        pg_extra = "lp_visible = TRUE"
     if not is_admin:
-        pg_extra = "company_id = :scope_cid"
+        clause = "company_id = :scope_cid"
         pg_params["scope_cid"] = user.company_id
+        pg_extra = f"{pg_extra} AND {clause}" if pg_extra else clause
     if "company_id" in filters:
         clause = "company_id = :filt_cid"
         pg_params["filt_cid"] = int(filters["company_id"])
@@ -1196,7 +1204,8 @@ def retrieve_for_chat(
     knowledge: list[ChunkResult] = []
     try:
         portfolio = retrieve_relevant_chunks(
-            query, user, db, filters=filters, limit=pool, include_crm=False
+            query, user, db, filters=filters, limit=pool, include_crm=False,
+            lp_only=(viewer_scope == "lp"),
         )
     except Exception as exc:
         log.warning("retrieve_for_chat: portfolio retrieval failed: %s", exc)

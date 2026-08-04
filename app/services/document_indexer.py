@@ -336,6 +336,7 @@ def index_document(document_id: int, db) -> int:
             text=text,
             embedding=json.dumps(vector),
             approved=True,
+            lp_visible=doc.lp_visible,
             reporting_year=doc.reporting_year,
             reporting_quarter=doc.reporting_quarter,
             reporting_month=doc.reporting_month,

@@ -139,3 +139,23 @@ def set_portfolio_drive_folder(value: str | None, db: Session) -> None:
         _set(PORTFOLIO_DRIVE_FOLDER, v, db)
     else:
         _delete(PORTFOLIO_DRIVE_FOLDER, db)
+
+
+# ---------------------------------------------------------------------------
+# LP Reporting folder (curated, LP-facing source — fund-level)
+# ---------------------------------------------------------------------------
+
+LP_REPORTING_FOLDER = "lp_reporting_folder_url"
+
+
+def get_lp_reporting_folder(db: Session) -> str | None:
+    import os
+    return _get(LP_REPORTING_FOLDER, db) or os.environ.get("LP_REPORTING_FOLDER_URL") or None
+
+
+def set_lp_reporting_folder(value: str | None, db: Session) -> None:
+    v = (value or "").strip()
+    if v:
+        _set(LP_REPORTING_FOLDER, v, db)
+    else:
+        _delete(LP_REPORTING_FOLDER, db)

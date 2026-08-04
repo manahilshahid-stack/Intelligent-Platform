@@ -25,6 +25,28 @@
   <div class="alert alert-error">{{ request.query_params.get('error') }}</div>
   {% endif %}
 
+  <div class="card" style="margin-bottom:1.25rem;border:2px solid #18181b">
+    <h2>LP Reporting folder (LP-facing source)</h2>
+    <p class="text-sm text-muted" style="margin-bottom:0.75rem">
+      The <strong>only</strong> portfolio content the LP platform can read. Put your curated,
+      consolidated quarterly reports here (filename with "Q2 2026" etc., one heading per company inside).
+      Internal company folders below stay internal-only and never reach LPs.
+    </p>
+    <form method="post" action="/admin/lp-reporting" style="display:flex;gap:0.6rem;flex-wrap:wrap">
+      <input name="lp_folder_url" type="url"
+             value="{{ lp_reporting_folder or '' }}"
+             placeholder="https://drive.google.com/drive/folders/…"
+             style="flex:1;min-width:320px;padding:0.5rem 0.65rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px">
+      <button class="btn btn-primary btn-sm" type="submit">Save &amp; sync</button>
+    </form>
+    {% if lp_company and lp_company.last_drive_sync_at %}
+    <p class="text-sm" style="margin-top:0.6rem">
+      Last sync: {{ lp_company.last_drive_sync_at.strftime("%d %b %Y %H:%M") }} UTC —
+      <span class="text-muted">{{ lp_company.last_drive_sync_result or "—" }}</span>
+    </p>
+    {% endif %}
+  </div>
+
   <div class="card" style="margin-bottom:1.25rem">
     <h2>Google Drive connection</h2>
     <p class="text-sm text-muted" style="margin-bottom:0.75rem">

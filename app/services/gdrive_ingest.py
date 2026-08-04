@@ -776,6 +776,8 @@ def _sync_company_drive_folder_impl(company, db, uploaded_by_id: int) -> dict:
                 review_status=ReviewStatus.pending,
                 document_category=category,
                 is_regular_reporting=bool(period),
+                # Only the curated LP Reporting folder produces LP-visible docs
+                lp_visible=(company.slug == "lp-reporting"),
                 reporting_period=label,
                 reporting_year=period.get("year") if period else None,
                 reporting_quarter=period.get("quarter") if period else None,

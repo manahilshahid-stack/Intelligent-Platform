@@ -185,6 +185,9 @@ _COLUMN_ADDITIONS: list[tuple[str, str, str]] = [
     # companies — last Drive sync outcome
     ("companies", "last_drive_sync_at", "TIMESTAMP"),
     ("companies", "last_drive_sync_result", "TEXT"),
+    # LP visibility wall
+    ("documents", "lp_visible", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("chunks", "lp_visible", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]
 
 
@@ -218,6 +221,10 @@ def _ensure_columns(conn) -> None:
         _add_column_if_missing(conn, "companies", "founder_contacts", "TEXT")
         _add_column_if_missing(conn, "companies", "last_drive_sync_at", "TIMESTAMP")
         _add_column_if_missing(conn, "companies", "last_drive_sync_result", "TEXT")
+    if _table_exists(conn, "documents"):
+        _add_column_if_missing(conn, "documents", "lp_visible", "BOOLEAN NOT NULL DEFAULT FALSE")
+    if _table_exists(conn, "chunks"):
+        _add_column_if_missing(conn, "chunks", "lp_visible", "BOOLEAN NOT NULL DEFAULT FALSE")
 
     # Column back-fills below use Postgres-specific DDL (BYTEA, enum FK types).
     # On SQLite (local dev), create_all already creates the full schema, so

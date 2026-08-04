@@ -257,7 +257,9 @@ def run_reminder_sweep(db: Session, today: date | None = None) -> dict:
                 "skipped": 0, "failed": 0,
                 "message": f"Q{quarter} {year}: first reminders go out on {r1.strftime('%d %b')}."}
 
-    companies = db.scalars(select(Company).order_by(Company.name)).all()
+    companies = db.scalars(
+        select(Company).where(Company.slug != "lp-reporting").order_by(Company.name)
+    ).all()
     for company in companies:
         state = status_for(db, company, year, quarter)
         if state["status"] == "uploaded":
