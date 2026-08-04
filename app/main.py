@@ -18,6 +18,7 @@ from .routes.chat_routes import router as chat_router
 from .routes.company_settings_routes import router as company_settings_router
 from .routes.crm_routes import router as crm_router
 from .routes.document_routes import router as document_router
+from .routes.news_routes import router as news_router
 from .routes.reporting_routes import router as reporting_router
 from .routes.review_routes import router as review_router
 from .routes.settings_routes import router as settings_router
@@ -78,6 +79,7 @@ app.include_router(chat_router)
 app.include_router(document_router)
 app.include_router(review_router)
 app.include_router(lp_api_router)  # JSON API for Cloudflare Workers frontend
+app.include_router(news_router)    # admin curation for LP home page feeds
 app.include_router(webhook_router)
 
 @app.get("/healthz")

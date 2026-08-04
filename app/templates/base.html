@@ -436,6 +436,11 @@ textarea { resize: vertical; line-height: 1.55; }
         <span class="nav-label">Tracker</span>
       </a>
 
+      <a href="/admin/news" class="nav-item {% if '/admin/news' in request.url.path %}active{% endif %}">
+        <span class="nav-icon">📰</span>
+        <span class="nav-label">News &amp; Events</span>
+      </a>
+
       <div class="nav-section-label">Admin</div>
 
       <a href="/admin/fund-reports" class="nav-item {% if '/admin/fund-reports' in request.url.path %}active{% endif %}">

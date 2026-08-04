@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}News & Events – Admin{% endblock %}
+
+{% block breadcrumb %}
+<a href="/admin">Admin</a>
+<span class="bc-sep">›</span>
+<span class="bc-current">News & Events</span>
+{% endblock %}
+
+{% block body %}
+<div class="page-content">
+
+  <div class="page-header">
+    <h1>News &amp; Events</h1>
+    <p class="subtitle">
+      Curate what appears on the LP home page. News is fetched nightly and waits here —
+      <strong>nothing reaches LPs until you approve it.</strong> Pinned items become the highlight banner.
+    </p>
+  </div>
+
+  {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+  {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+  <div style="display:flex;gap:0.6rem;margin-bottom:1.25rem">
+    <form method="post" action="/admin/news/fetch">
+      <button class="btn btn-primary btn-sm" type="submit">⟳ Fetch news now</button>
+    </form>
+    <form method="post" action="/admin/news/sync-events">
+      <button class="btn btn-secondary btn-sm" type="submit" {% if not luma_configured %}disabled title="Set LUMA_API_KEY on Railway first"{% endif %}>
+        ⟳ Sync Luma events
+      </button>
+    </form>
+  </div>
+
+  {% if not luma_configured %}
+  <div class="alert alert-error" style="margin-bottom:1.25rem">
+    LUMA_API_KEY is not set on Railway — the events card will stay empty until it is.
+  </div>
+  {% endif %}
+
+  <div class="card" style="margin-bottom:1.25rem;border:2px solid #18181b">
+    <h2>Awaiting review ({{ pending|length }})</h2>
+    {% if pending %}
+    <table class="data-table">
+      <thead><tr><th>Headline</th><th>Company</th><th>Category</th><th>Date</th><th></th></tr></thead>
+      <tbody>
+        {% for n in pending %}
+        <tr>
+          <td><a href="{{ n.url }}" target="_blank" rel="noopener" style="text-decoration:none;font-weight:500">{{ n.title }}</a>
+            {% if n.source %}<div class="text-sm text-muted">{{ n.source }}</div>{% endif %}</td>
+          <td class="text-sm">{{ n.company or "—" }}</td>
+          <td><span class="badge {% if n.category == 'funding' %}badge-success{% elif n.category == 'merantix' %}badge-info{% else %}badge-neutral{% endif %}">{{ n.category }}</span></td>
+          <td class="text-sm">{{ n.published_at.strftime("%d %b %Y") if n.published_at else "—" }}</td>
+          <td style="white-space:nowrap">
+            <form method="post" action="/admin/news/{{ n.id }}/approve" style="display:inline"><button class="btn btn-sm btn-primary" type="submit">Approve</button></form>
+            <form method="post" action="/admin/news/{{ n.id }}/pin" style="display:inline"><button class="btn btn-sm btn-secondary" type="submit" title="Approve + show as highlight banner">📌 Pin</button></form>
+            <form method="post" action="/admin/news/{{ n.id }}/hide" style="display:inline"><button class="btn btn-sm btn-ghost" type="submit">Hide</button></form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-sm text-muted">Nothing waiting. New items arrive with the nightly fetch (or “Fetch news now”).</p>
+    {% endif %}
+  </div>
+
+  <div class="card" style="margin-bottom:1.25rem">
+    <h2>Live on the LP home page ({{ published|length }})</h2>
+    {% if published %}
+    <table class="data-table">
+      <thead><tr><th>Headline</th><th>Company</th><th>Category</th><th>Date</th><th></th></tr></thead>
+      <tbody>
+        {% for n in published %}
+        <tr>
+          <td>{% if n.pinned %}<span title="Highlight banner">📌</span> {% endif %}<a href="{{ n.url }}" target="_blank" rel="noopener" style="text-decoration:none">{{ n.title }}</a></td>
+          <td class="text-sm">{{ n.company or "—" }}</td>
+          <td><span class="badge {% if n.category == 'funding' %}badge-success{% elif n.category == 'merantix' %}badge-info{% else %}badge-neutral{% endif %}">{{ n.category }}</span></td>
+          <td class="text-sm">{{ n.published_at.strftime("%d %b %Y") if n.published_at else "—" }}</td>
+          <td style="white-space:nowrap">
+            {% if n.pinned %}
+            <form method="post" action="/admin/news/{{ n.id }}/unpin" style="display:inline"><button class="btn btn-sm btn-secondary" type="submit">Unpin</button></form>
+            {% else %}
+            <form method="post" action="/admin/news/{{ n.id }}/pin" style="display:inline"><button class="btn btn-sm btn-ghost" type="submit">📌 Pin</button></form>
+            {% endif %}
+            <form method="post" action="/admin/news/{{ n.id }}/hide" style="display:inline"><button class="btn btn-sm btn-ghost" type="submit">Remove</button></form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-sm text-muted">No approved items yet — approve something above and it appears on the LP home page.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Upcoming events (from Luma)</h2>
+    {% if events %}
+    <table class="data-table">
+      <thead><tr><th>Event</th><th>When</th><th>Where</th></tr></thead>
+      <tbody>
+        {% for e in events %}
+        <tr>
+          <td>{% if e.url %}<a href="{{ e.url }}" target="_blank" rel="noopener" style="text-decoration:none;font-weight:500">{{ e.name }}</a>{% else %}{{ e.name }}{% endif %}</td>
+          <td class="text-sm">{{ e.starts_at.strftime("%d %b %Y, %H:%M") if e.starts_at else "—" }} UTC</td>
+          <td class="text-sm">{{ e.location or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-sm text-muted">No upcoming events synced yet. Events sync automatically each night — LPs always see the next three.</p>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

@@ -111,6 +111,36 @@ def run_reminder_sweep_job() -> None:
         db.close()
 
 
+def run_luma_sync_job() -> None:
+    """Nightly Luma calendar sync for the LP home page events card."""
+    from ..database import SessionLocal
+    from .luma_service import sync_luma_events
+
+    db = SessionLocal()
+    try:
+        result = sync_luma_events(db)
+        log.info("luma sync: %s", result.get("message"))
+    except Exception as exc:  # noqa: BLE001
+        log.error("luma sync failed: %s", exc, exc_info=True)
+    finally:
+        db.close()
+
+
+def run_news_fetch_job() -> None:
+    """Nightly news fetch (Google News RSS → pending items for admin review)."""
+    from ..database import SessionLocal
+    from .news_service import fetch_news
+
+    db = SessionLocal()
+    try:
+        result = fetch_news(db)
+        log.info("news fetch: %s", result.get("message"))
+    except Exception as exc:  # noqa: BLE001
+        log.error("news fetch failed: %s", exc, exc_info=True)
+    finally:
+        db.close()
+
+
 def _sync_ventures(db):
     from .attio_sync import sync_attio_list_ventures
     sync_attio_list_ventures(db)
@@ -238,6 +268,25 @@ def start_scheduler():
         misfire_grace_time=3600,
         replace_existing=True,
     )
+
+    # Nightly Luma events sync (default 06:15) + news fetch (default 06:30).
+    for job_id, fn, env, default in (
+        ("luma_sync", run_luma_sync_job, "LUMA_SYNC_CRON", "15 6 * * *"),
+        ("news_fetch", run_news_fetch_job, "NEWS_FETCH_CRON", "30 6 * * *"),
+    ):
+        try:
+            feed_trigger = CronTrigger.from_crontab(os.getenv(env, default), timezone=tz)
+        except Exception:
+            feed_trigger = CronTrigger.from_crontab(default, timezone=tz)
+        sched.add_job(
+            fn,
+            trigger=feed_trigger,
+            id=job_id,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=3600,
+            replace_existing=True,
+        )
 
     # Optional: interval-based polling (runs every N minutes in addition to cron)
     interval_minutes = int(os.getenv("SYNC_INTERVAL_MINUTES", "0") or "0")

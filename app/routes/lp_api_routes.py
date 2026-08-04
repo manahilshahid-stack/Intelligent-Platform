@@ -1353,3 +1353,78 @@ def api_message_feedback(
         db.commit()
 
     return {"ok": True, "rated": body.rating}
+
+
+# ── Home page feeds: events (Luma) + curated news ────────────────────────────
+
+@router.get("/api/lp/events")
+def api_lp_events(
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = 3,
+):
+    """Next upcoming events from the Merantix Luma calendar."""
+    from ..models import PortalEvent
+
+    limit = max(1, min(limit, 10))
+    events = db.scalars(
+        select(PortalEvent)
+        .where(PortalEvent.starts_at >= datetime.utcnow())
+        .order_by(PortalEvent.starts_at.asc())
+        .limit(limit)
+    ).all()
+    return {
+        "calendar_url": settings.luma_calendar_url,
+        "events": [
+            {
+                "id": e.id,
+                "name": e.name,
+                "url": e.url,
+                "cover_url": e.cover_url,
+                "location": e.location,
+                "starts_at": e.starts_at.isoformat() + "Z" if e.starts_at else None,
+                "ends_at": e.ends_at.isoformat() + "Z" if e.ends_at else None,
+            }
+            for e in events
+        ],
+    }
+
+
+@router.get("/api/lp/news")
+def api_lp_news(
+    current_user: LPUser = Depends(_get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = 5,
+):
+    """Admin-approved news, grouped by category, plus the pinned highlight."""
+    from ..models import NewsItem
+
+    limit = max(1, min(limit, 20))
+
+    def _dump(n: NewsItem) -> dict:
+        return {
+            "id": n.id,
+            "title": n.title,
+            "url": n.url,
+            "source": n.source,
+            "company": n.company,
+            "category": n.category,
+            "published_at": n.published_at.isoformat() + "Z" if n.published_at else None,
+        }
+
+    highlight = db.scalar(
+        select(NewsItem)
+        .where(NewsItem.status == "approved", NewsItem.pinned == True)  # noqa: E712
+        .order_by(NewsItem.published_at.desc().nullslast())
+    )
+
+    out: dict = {"highlight": _dump(highlight) if highlight else None}
+    for category in ("funding", "press", "merantix"):
+        items = db.scalars(
+            select(NewsItem)
+            .where(NewsItem.status == "approved", NewsItem.category == category)
+            .order_by(NewsItem.published_at.desc().nullslast())
+            .limit(limit)
+        ).all()
+        out[category] = [_dump(n) for n in items]
+    return out

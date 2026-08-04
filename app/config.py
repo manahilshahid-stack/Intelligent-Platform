@@ -38,6 +38,12 @@ class Settings:
         "OPENROUTER_EMBEDDING_MODEL", "openai/text-embedding-3-small"
     )
 
+    # ── Luma (events feed on LP home page) ───────────────────────────────────
+    # API key is created per-calendar in Luma → calendar settings → API (Plus).
+    luma_api_key: str | None = os.environ.get("LUMA_API_KEY")
+    # Plain public calendar URL — used for the "View all events" link only.
+    luma_calendar_url: str | None = os.environ.get("LUMA_CALENDAR_URL")
+
     # ── Upload limits ─────────────────────────────────────────────────────────
     max_upload_bytes: int = int(os.environ.get("MAX_UPLOAD_MB", "20")) * 1024 * 1024
 

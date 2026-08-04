@@ -915,3 +915,47 @@ class LPMessageFeedback(Base):
         Index("ix_lp_message_feedback_lp_user_id", "lp_user_id"),
         UniqueConstraint("lp_user_id", "message_id", name="uq_lp_feedback_per_message"),
     )
+
+
+class PortalEvent(Base):
+    """Upcoming/past events synced nightly from the Merantix Luma calendar."""
+    __tablename__ = "portal_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    luma_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    url: Mapped[str | None] = mapped_column(String(1000))
+    cover_url: Mapped[str | None] = mapped_column(String(1000))
+    location: Mapped[str | None] = mapped_column(String(500))
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+    __table_args__ = (Index("ix_portal_events_starts_at", "starts_at"),)
+
+
+class NewsItem(Base):
+    """
+    News headline fetched nightly (Google News RSS per portfolio company +
+    Merantix Capital), classified by the cheap pipeline model, and held as
+    `pending` until an admin approves it. Only status='approved' ever reaches
+    the LP home page. `pinned` items feed the highlight banner.
+    """
+    __tablename__ = "news_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    url_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)  # sha256 of url
+    title: Mapped[str] = mapped_column(String(700), nullable=False)
+    source: Mapped[str | None] = mapped_column(String(300))          # publication name
+    company: Mapped[str | None] = mapped_column(String(300))         # matched portfolio company / "Merantix Capital"
+    category: Mapped[str] = mapped_column(String(20), nullable=False, default="press")  # funding | press | merantix
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")  # pending | approved | hidden
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_news_items_status", "status"),
+        Index("ix_news_items_published_at", "published_at"),
+    )
