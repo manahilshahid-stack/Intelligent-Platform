@@ -142,9 +142,13 @@ def fetch_news(db: Session) -> dict:
                 "message": f"Substack feed returned no posts (checked {_SUBSTACK_URL}/feed). "
                            "Is the publication public?"}
 
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(days=_MAX_AGE_DAYS)
     names = _portfolio_names(db)
     added = 0
     for item in posts:
+        if item["published_at"] and item["published_at"] < cutoff:
+            continue  # older than the age window (default 6 months)
         h = _url_hash(item["url"])
         if db.scalar(select(NewsItem.id).where(NewsItem.url_hash == h)):
             continue
