@@ -272,7 +272,8 @@ def start_scheduler():
     # Nightly Luma events sync (default 06:15) + news fetch (default 06:30).
     for job_id, fn, env, default in (
         ("luma_sync", run_luma_sync_job, "LUMA_SYNC_CRON", "15 6 * * *"),
-        ("news_fetch", run_news_fetch_job, "NEWS_FETCH_CRON", "30 6 * * *"),
+        # Substack mirror is cheap (one RSS fetch, no LLM) → hourly by default
+        ("news_fetch", run_news_fetch_job, "NEWS_FETCH_CRON", "0 * * * *"),
     ):
         try:
             feed_trigger = CronTrigger.from_crontab(os.getenv(env, default), timezone=tz)

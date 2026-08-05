@@ -13,8 +13,9 @@
   <div class="page-header">
     <h1>News &amp; Events</h1>
     <p class="subtitle">
-      Curate what appears on the LP home page. News is fetched nightly and waits here —
-      <strong>nothing reaches LPs until you approve it.</strong> Pinned items become the highlight banner.
+      The LP news feed mirrors your <strong>Substack publication</strong> — posts are synced hourly,
+      published automatically, and sorted into Funding / Portfolio / Merantix.
+      Hide any post to remove it from the portal; 📌 pin one to make it the highlight banner.
     </p>
   </div>
 
@@ -23,7 +24,7 @@
 
   <div style="display:flex;gap:0.6rem;margin-bottom:1.25rem">
     <form method="post" action="/admin/news/fetch">
-      <button class="btn btn-primary btn-sm" type="submit">⟳ Fetch news now</button>
+      <button class="btn btn-primary btn-sm" type="submit">⟳ Sync Substack now</button>
     </form>
     <form method="post" action="/admin/news/sync-events">
       <button class="btn btn-secondary btn-sm" type="submit" {% if not luma_configured %}disabled title="Set LUMA_API_KEY on Railway first"{% endif %}>

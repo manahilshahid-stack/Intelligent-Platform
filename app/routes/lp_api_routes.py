@@ -1420,7 +1420,7 @@ def api_lp_news(
     )
 
     out: dict = {"highlight": _dump(highlight) if highlight else None}
-    for category in ("funding", "press", "merantix"):
+    for category in ("funding", "portfolio", "merantix"):
         items = db.scalars(
             select(NewsItem)
             .where(NewsItem.status == "approved", NewsItem.category == category)
