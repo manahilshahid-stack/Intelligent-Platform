@@ -1357,7 +1357,7 @@ def api_message_feedback(
 
 # ── Home page feeds: events (Luma) + curated news ────────────────────────────
 
-@router.get("/api/lp/events")
+@router.get("/events")
 def api_lp_events(
     current_user: LPUser = Depends(_get_current_user),
     db: Session = Depends(get_db),
@@ -1390,7 +1390,7 @@ def api_lp_events(
     }
 
 
-@router.get("/api/lp/news")
+@router.get("/news")
 def api_lp_news(
     current_user: LPUser = Depends(_get_current_user),
     db: Session = Depends(get_db),
