@@ -140,6 +140,8 @@ def _ensure_enums(conn) -> None:
 
 _COLUMN_ADDITIONS: list[tuple[str, str, str]] = [
     # (table, column, sql_type_definition)
+    # news_items
+    ("news_items", "image_url", "VARCHAR(1000)"),
     # users
     ("users", "name", "VARCHAR(200)"),
     ("users", "company_id", "INTEGER REFERENCES companies(id) ON DELETE SET NULL"),

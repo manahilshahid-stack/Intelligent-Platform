@@ -20,6 +20,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -87,6 +88,30 @@ def _fetch_rss(query: str) -> list[dict]:
     return items
 
 
+_OG_IMAGE_RE = re.compile(
+    r'<meta[^>]+(?:property|name)=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']'
+    r'|<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\']og:image["\']',
+    re.IGNORECASE,
+)
+
+
+def _fetch_og_image(article_url: str) -> str | None:
+    """Best-effort thumbnail: fetch the article page and read its og:image tag."""
+    try:
+        resp = httpx.get(article_url, timeout=10.0, follow_redirects=True,
+                         headers={"User-Agent": "Mozilla/5.0 (compatible; MerantixPortal/1.0)"})
+        if resp.status_code != 200:
+            return None
+        m = _OG_IMAGE_RE.search(resp.text[:60_000])
+        if m:
+            img = (m.group(1) or m.group(2) or "").strip()
+            if img.startswith("http"):
+                return img[:1000]
+    except httpx.HTTPError:
+        pass
+    return None
+
+
 def _fetch_substack() -> list[dict]:
     """Latest posts from the fund's own Substack (public RSS, no key needed)."""
     if not _SUBSTACK_URL:
@@ -107,10 +132,13 @@ def _fetch_substack() -> list[dict]:
         link = (item.findtext("link") or "").strip()
         if not title or not link:
             continue
+        enclosure = item.find("enclosure")
+        image = (enclosure.get("url") or "").strip() if enclosure is not None else ""
         items.append({
             "title": title[:700],
             "url": link[:1000],
             "source": publication[:300],
+            "image_url": image[:1000] or None,
             "published_at": _parse_pubdate(item.findtext("pubDate")),
         })
         if len(items) >= _SUBSTACK_MAX:
@@ -193,6 +221,7 @@ def fetch_news(db: Session) -> dict:
             url=item["url"], url_hash=h, title=item["title"],
             source=item["source"], company="Merantix Capital",
             category="merantix", status="approved",
+            image_url=item.get("image_url"),
             published_at=item["published_at"],
         ))
         substack_added += 1
@@ -243,9 +272,18 @@ def fetch_news(db: Session) -> dict:
             url=c["url"], url_hash=c["url_hash"], title=c["title"],
             source=c["source"], company=c["company"], category=category,
             published_at=c["published_at"], status=status,
+            # thumbnail only for items that will actually be reviewed/shown
+            image_url=_fetch_og_image(c["url"]) if status == "pending" else None,
         ))
         if status == "pending":
             added += 1
+
+    # Backfill thumbnails for existing visible items that predate image support
+    for n in db.scalars(
+        select(NewsItem).where(NewsItem.status.in_(("pending", "approved")),
+                               NewsItem.image_url.is_(None)).limit(20)
+    ).all():
+        n.image_url = _fetch_og_image(n.url)
 
     db.commit()
     msg = f"News fetch complete: {added} new item(s) awaiting review, {dropped} filtered out."

@@ -1409,6 +1409,7 @@ def api_lp_news(
             "source": n.source,
             "company": n.company,
             "category": n.category,
+            "image_url": n.image_url,
             "published_at": n.published_at.isoformat() + "Z" if n.published_at else None,
         }
 

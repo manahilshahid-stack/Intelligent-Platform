@@ -951,6 +951,7 @@ class NewsItem(Base):
     company: Mapped[str | None] = mapped_column(String(300))         # matched portfolio company / "Merantix Capital"
     category: Mapped[str] = mapped_column(String(20), nullable=False, default="press")  # funding | press | merantix
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")  # pending | approved | hidden
+    image_url: Mapped[str | None] = mapped_column(String(1000))  # og:image / Substack enclosure
     pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
