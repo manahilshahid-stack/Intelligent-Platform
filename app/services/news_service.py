@@ -38,6 +38,12 @@ _TIMEOUT = 20.0
 _MAX_PER_QUERY = 8
 _MAX_AGE_DAYS = int(os.environ.get("NEWS_MAX_AGE_DAYS", "30"))
 
+# Own Substack publication (e.g. https://merantix.substack.com). Its posts are
+# trusted first-party content: they bypass the review queue (auto-approved,
+# Merantix tab). Admin can still hide individual posts.
+_SUBSTACK_URL = os.environ.get("SUBSTACK_URL", "").strip().rstrip("/")
+_SUBSTACK_MAX = int(os.environ.get("SUBSTACK_MAX_POSTS", "5"))
+
 
 def _url_hash(url: str) -> str:
     return hashlib.sha256(url.encode("utf-8")).hexdigest()
@@ -77,6 +83,37 @@ def _fetch_rss(query: str) -> list[dict]:
         items.append({"title": title[:700], "url": link[:1000],
                       "source": source[:300] or None, "published_at": published})
         if len(items) >= _MAX_PER_QUERY:
+            break
+    return items
+
+
+def _fetch_substack() -> list[dict]:
+    """Latest posts from the fund's own Substack (public RSS, no key needed)."""
+    if not _SUBSTACK_URL:
+        return []
+    feed_url = _SUBSTACK_URL + "/feed"
+    try:
+        resp = httpx.get(feed_url, timeout=_TIMEOUT, follow_redirects=True)
+        resp.raise_for_status()
+        root = ET.fromstring(resp.content)
+    except (httpx.HTTPError, ET.ParseError) as exc:
+        log.warning("news: Substack feed fetch failed (%s): %s", feed_url, exc)
+        return []
+
+    publication = (root.findtext("channel/title") or "Substack").strip()
+    items = []
+    for item in root.iter("item"):
+        title = (item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        if not title or not link:
+            continue
+        items.append({
+            "title": title[:700],
+            "url": link[:1000],
+            "source": publication[:300],
+            "published_at": _parse_pubdate(item.findtext("pubDate")),
+        })
+        if len(items) >= _SUBSTACK_MAX:
             break
     return items
 
@@ -144,8 +181,28 @@ def fetch_news(db: Session) -> dict:
     candidates: list[dict] = []
     seen_hashes: set[str] = set()
 
+    # Own Substack posts first: trusted, auto-approved, no age cutoff
+    # (newsletters publish less often than news breaks).
+    substack_added = 0
+    for item in _fetch_substack():
+        h = _url_hash(item["url"])
+        if h in seen_hashes or db.scalar(select(NewsItem.id).where(NewsItem.url_hash == h)):
+            continue
+        seen_hashes.add(h)
+        db.add(NewsItem(
+            url=item["url"], url_hash=h, title=item["title"],
+            source=item["source"], company="Merantix Capital",
+            category="merantix", status="approved",
+            published_at=item["published_at"],
+        ))
+        substack_added += 1
+
     for query, forced_category in queries:
         for item in _fetch_rss(query):
+            # STRICT relevance: the headline itself must name the company.
+            # Anything vaguer never even reaches the review queue.
+            if query.lower() not in item["title"].lower():
+                continue
             if item["published_at"] and item["published_at"] < cutoff:
                 continue
             h = _url_hash(item["url"])
@@ -158,7 +215,10 @@ def fetch_news(db: Session) -> dict:
                                "forced_category": forced_category})
 
     if not candidates:
-        return {"ok": True, "message": "News fetch complete: nothing new.", "added": 0}
+        db.commit()
+        suffix = f" {substack_added} Substack post(s) published." if substack_added else ""
+        return {"ok": True, "message": f"News fetch complete: nothing new from the press.{suffix}",
+                "added": substack_added}
 
     verdicts = _classify(
         [c for c in candidates if c["forced_category"] is None], db
@@ -189,5 +249,8 @@ def fetch_news(db: Session) -> dict:
 
     db.commit()
     msg = f"News fetch complete: {added} new item(s) awaiting review, {dropped} filtered out."
+    if substack_added:
+        msg += f" {substack_added} Substack post(s) published directly."
     log.info(msg)
-    return {"ok": True, "message": msg, "added": added, "dropped": dropped}
+    return {"ok": True, "message": msg, "added": added, "dropped": dropped,
+            "substack": substack_added}
