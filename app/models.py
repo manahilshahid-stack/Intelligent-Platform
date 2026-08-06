@@ -929,6 +929,11 @@ class PortalEvent(Base):
     location: Mapped[str | None] = mapped_column(String(500))
     starts_at: Mapped[datetime | None] = mapped_column(DateTime)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime)
+    tags: Mapped[str | None] = mapped_column(String(500))        # comma-joined, lowercase
+    visibility: Mapped[str | None] = mapped_column(String(50))   # Luma's own field
+    # Computed at sync time: tag "private" hides; tag "public…" (or Luma
+    # visibility=public with no tags) shows. Only these reach the LP home page.
+    lp_visible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
 
     __table_args__ = (Index("ix_portal_events_starts_at", "starts_at"),)

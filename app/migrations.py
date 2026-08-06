@@ -142,6 +142,10 @@ _COLUMN_ADDITIONS: list[tuple[str, str, str]] = [
     # (table, column, sql_type_definition)
     # news_items
     ("news_items", "image_url", "VARCHAR(1000)"),
+    # portal_events
+    ("portal_events", "tags", "VARCHAR(500)"),
+    ("portal_events", "visibility", "VARCHAR(50)"),
+    ("portal_events", "lp_visible", "BOOLEAN NOT NULL DEFAULT TRUE"),
     # users
     ("users", "name", "VARCHAR(200)"),
     ("users", "company_id", "INTEGER REFERENCES companies(id) ON DELETE SET NULL"),

@@ -1370,6 +1370,7 @@ def api_lp_events(
     events = db.scalars(
         select(PortalEvent)
         .where(PortalEvent.starts_at >= datetime.utcnow())
+        .where(PortalEvent.lp_visible == True)  # noqa: E712 — private-tagged events never reach LPs
         .order_by(PortalEvent.starts_at.asc())
         .limit(limit)
     ).all()

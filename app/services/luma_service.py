@@ -55,6 +55,30 @@ def _location_of(event: dict) -> str | None:
     return None
 
 
+def _tag_names(entry: dict, event: dict) -> list[str]:
+    """Tags can live on the entry or the event, as strings or {name: …} dicts."""
+    raw = entry.get("tags") or event.get("tags") or []
+    names = []
+    for t in raw:
+        name = t.get("name") if isinstance(t, dict) else t
+        if isinstance(name, str) and name.strip():
+            names.append(name.strip().lower())
+    return names
+
+
+def _is_lp_visible(tags: list[str], visibility: str | None) -> bool:
+    """
+    Manahil's rule: events tagged "private" never reach the LP page; events
+    tagged "public…" (e.g. "public event") do. Untagged events fall back to
+    Luma's own visibility field (public → shown).
+    """
+    if any("private" in t for t in tags):
+        return False
+    if any("public" in t for t in tags):
+        return True
+    return (visibility or "public").lower() == "public"
+
+
 def sync_luma_events(db: Session) -> dict:
     """Pull events from the Luma calendar and upsert them. Returns a summary."""
     api_key = settings.luma_api_key
@@ -99,6 +123,10 @@ def sync_luma_events(db: Session) -> dict:
                 row.location = _location_of(event) or row.location
                 row.starts_at = _parse_dt(event.get("start_at")) or row.starts_at
                 row.ends_at = _parse_dt(event.get("end_at")) or row.ends_at
+                tags = _tag_names(entry, event)
+                row.tags = ",".join(tags)[:500] or None
+                row.visibility = (event.get("visibility") or "")[:50] or None
+                row.lp_visible = _is_lp_visible(tags, row.visibility)
 
             pages += 1
             if not data.get("has_more") or not data.get("next_cursor") or pages >= 20:

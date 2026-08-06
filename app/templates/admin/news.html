@@ -98,14 +98,20 @@
   <div class="card">
     <h2>Upcoming events (from Luma)</h2>
     {% if events %}
+    <p class="text-sm text-muted" style="margin-bottom:0.6rem">
+      Tag events in Luma: <strong>“public event”</strong> → shown to LPs · <strong>“private”</strong> → hidden.
+      Untagged events follow Luma's own visibility setting.
+    </p>
     <table class="data-table">
-      <thead><tr><th>Event</th><th>When</th><th>Where</th></tr></thead>
+      <thead><tr><th>Event</th><th>When</th><th>Where</th><th>Tags</th><th>LP page</th></tr></thead>
       <tbody>
         {% for e in events %}
         <tr>
           <td>{% if e.url %}<a href="{{ e.url }}" target="_blank" rel="noopener" style="text-decoration:none;font-weight:500">{{ e.name }}</a>{% else %}{{ e.name }}{% endif %}</td>
           <td class="text-sm">{{ e.starts_at.strftime("%d %b %Y, %H:%M") if e.starts_at else "—" }} UTC</td>
           <td class="text-sm">{{ e.location or "—" }}</td>
+          <td class="text-sm">{{ e.tags or "—" }}</td>
+          <td>{% if e.lp_visible %}<span class="badge badge-success">Shown</span>{% else %}<span class="badge badge-neutral">Hidden</span>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
