@@ -424,6 +424,9 @@ def run_migrations(bind: Engine = engine) -> None:
     # 8. Portfolio company sector + funding_stage corrections
     _ensure_portfolio_sectors(bind)
 
+    # 9. UX analytics events table
+    _ensure_analytics_events(bind)
+
     log.info("Schema migrations complete.")
 
 
@@ -630,3 +633,34 @@ def _ensure_feedback(bind) -> None:
                     log.warning("feedback migration step skipped: %s", exc)
     except Exception as exc:
         log.warning("feedback migration failed: %s", exc)
+
+
+def _ensure_analytics_events(bind) -> None:
+    """Create analytics_events table + indexes if they don't exist."""
+    steps = [
+        """CREATE TABLE IF NOT EXISTS analytics_events (
+            id          SERIAL PRIMARY KEY,
+            event_type  VARCHAR(50)  NOT NULL,
+            event_name  VARCHAR(200),
+            lp_user_id  INTEGER REFERENCES lp_users(id) ON DELETE SET NULL,
+            session_id  VARCHAR(64),
+            page_path   VARCHAR(500),
+            referrer_path VARCHAR(500),
+            properties  TEXT,
+            duration_ms INTEGER,
+            created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS ix_analytics_events_event_type  ON analytics_events(event_type)",
+        "CREATE INDEX IF NOT EXISTS ix_analytics_events_lp_user_id  ON analytics_events(lp_user_id)",
+        "CREATE INDEX IF NOT EXISTS ix_analytics_events_created_at  ON analytics_events(created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_analytics_events_event_name  ON analytics_events(event_name)",
+    ]
+    try:
+        with bind.begin() as conn:
+            for sql in steps:
+                try:
+                    conn.execute(text(sql))
+                except Exception as exc:
+                    log.warning("analytics_events migration step skipped: %s", exc)
+    except Exception as exc:
+        log.warning("analytics_events migration failed: %s", exc)

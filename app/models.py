@@ -828,6 +828,48 @@ class ExternalDocument(Base):
 
 
 # ---------------------------------------------------------------------------
+# Analytics events (UX tracking)
+# ---------------------------------------------------------------------------
+
+class AnalyticsEvent(Base):
+    """
+    One row per user interaction captured by the LP frontend.
+    Schema is intentionally wide + flexible (properties JSONB) so we never
+    need a migration to add new event metadata.
+
+    event_type values:
+        page_view         — route change (every navigation)
+        company_view      — LP opened a specific company profile
+        chat_message      — LP sent a chat message (content NOT stored)
+        chat_session_start— LP started or resumed a chat session
+        feature_click     — LP interacted with a named UI feature
+        search            — LP searched / filtered the portfolio grid
+    """
+    __tablename__ = "analytics_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    event_name: Mapped[str | None] = mapped_column(String(200))   # page name, company slug, feature id
+    lp_user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("lp_users.id", ondelete="SET NULL"), nullable=True
+    )
+    session_id: Mapped[str | None] = mapped_column(String(64))    # browser sessionStorage key
+    page_path: Mapped[str | None] = mapped_column(String(500))    # /companies/almetra
+    referrer_path: Mapped[str | None] = mapped_column(String(500))
+    # Flexible per-event metadata: company_name, sector, query_length, …
+    properties: Mapped[str | None] = mapped_column(Text)          # JSON string
+    duration_ms: Mapped[int | None] = mapped_column(Integer)      # time-on-page
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_analytics_events_event_type", "event_type"),
+        Index("ix_analytics_events_lp_user_id", "lp_user_id"),
+        Index("ix_analytics_events_created_at", "created_at"),
+        Index("ix_analytics_events_event_name", "event_name"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Knowledge base (CRM ventures indexing)
 # ---------------------------------------------------------------------------
 
