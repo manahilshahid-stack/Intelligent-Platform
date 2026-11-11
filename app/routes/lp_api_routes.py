@@ -491,9 +491,11 @@ def api_verify_otp(body: VerifyOtpRequest, db: Session = Depends(get_db)):
         raise HTTPException(404, "No account found with that email")
 
     if user.email_verified:
-        # Already verified — just issue a token (idempotent)
-        token = _create_token(user, db)
-        return {"ok": True, "token": token, "user": _user_to_dict(user)}
+        # Never issue a token here for a verified account: this endpoint checks
+        # no password, so doing so let anyone log in as any verified LP by email.
+        # 409 + code (same shape as login's email_not_verified) so the frontend
+        # can route the user to the login page.
+        raise HTTPException(409, detail={"code": "already_verified", "email": email})
 
     if not user.otp_code or user.otp_code != code:
         raise HTTPException(400, "Invalid verification code")
