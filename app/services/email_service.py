@@ -1,57 +1,64 @@
 """
-Minimal SMTP email sending (Google Workspace friendly).
+Transactional email over HTTPS via Resend (https://resend.com).
+
+Railway blocks outbound SMTP on the Free, Trial and Hobby plans, so all email
+goes through Resend's HTTPS API instead.
 
 Environment variables (set on Railway):
-  SMTP_HOST      e.g. smtp.gmail.com
-  SMTP_PORT      default 587 (STARTTLS)
-  SMTP_USER      e.g. reporting@merantix.com
-  SMTP_PASSWORD  Google App Password (not the account password)
-  SMTP_FROM      optional; defaults to SMTP_USER
-
-For Google Workspace: create an App Password (Google Account → Security →
-2-Step Verification → App passwords) for the sending mailbox.
+  RESEND_API_KEY  Resend API key (re_...)
+  EMAIL_FROM      sender, e.g. "Merantix Capital <lp@updates.merantix.com>".
+                  Its domain must be verified in the Resend account.
 """
 from __future__ import annotations
 
 import logging
 import os
-import smtplib
-from email.message import EmailMessage
+
+import httpx
 
 log = logging.getLogger(__name__)
 
+RESEND_URL = "https://api.resend.com/emails"
+TIMEOUT_SECONDS = 15
 
-def smtp_configured() -> bool:
-    return bool(os.getenv("SMTP_HOST") and os.getenv("SMTP_USER") and os.getenv("SMTP_PASSWORD"))
+
+def email_configured() -> bool:
+    return bool(os.getenv("RESEND_API_KEY") and os.getenv("EMAIL_FROM"))
 
 
-def send_email(to: list[str], subject: str, body: str) -> None:
-    """Send a plain-text email. Raises RuntimeError with a readable message on failure."""
-    host = os.getenv("SMTP_HOST")
-    user = os.getenv("SMTP_USER")
-    password = os.getenv("SMTP_PASSWORD")
-    port = int(os.getenv("SMTP_PORT", "587"))
-    sender = os.getenv("SMTP_FROM") or user
+def send_email(to: list[str], subject: str, body: str | None = None, *, html: str | None = None) -> None:
+    """Send an email (plain text and/or HTML). Raises RuntimeError with a readable message on failure."""
+    api_key = os.getenv("RESEND_API_KEY")
+    sender = os.getenv("EMAIL_FROM")
 
-    if not (host and user and password):
-        raise RuntimeError(
-            "SMTP is not configured. Set SMTP_HOST, SMTP_USER and SMTP_PASSWORD "
-            "(and optionally SMTP_PORT, SMTP_FROM) as environment variables."
-        )
+    if not (api_key and sender):
+        raise RuntimeError("Email is not configured. Set RESEND_API_KEY and EMAIL_FROM as environment variables.")
     if not to:
         raise RuntimeError("No recipient email addresses.")
+    if body is None and html is None:
+        raise RuntimeError("Email has no body.")
 
-    msg = EmailMessage()
-    msg["From"] = sender
-    msg["To"] = ", ".join(to)
-    msg["Subject"] = subject
-    msg.set_content(body)
+    payload: dict = {"from": sender, "to": to, "subject": subject}
+    if body is not None:
+        payload["text"] = body
+    if html is not None:
+        payload["html"] = html
 
     try:
-        with smtplib.SMTP(host, port, timeout=30) as smtp:
-            smtp.starttls()
-            smtp.login(user, password)
-            smtp.send_message(msg)
-        log.info("email sent to %s: %s", to, subject)
-    except Exception as exc:
-        raise RuntimeError(f"Email send failed: {exc}") from exc
+        resp = httpx.post(
+            RESEND_URL,
+            json=payload,
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=TIMEOUT_SECONDS,
+        )
+    except httpx.HTTPError as exc:
+        raise RuntimeError(f"Email send failed: {type(exc).__name__}: {exc}") from exc
+
+    if resp.status_code >= 400:
+        try:
+            detail = resp.json().get("message") or resp.text
+        except ValueError:
+            detail = resp.text
+        raise RuntimeError(f"Email send failed: Resend returned {resp.status_code}: {detail[:200]}")
+
+    log.info("email sent to %s: %s", to, subject)

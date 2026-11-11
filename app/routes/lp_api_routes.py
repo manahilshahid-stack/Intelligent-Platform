@@ -208,46 +208,10 @@ def _generate_otp() -> str:
 
 
 def _send_otp_email(to_email: str, name: str, code: str, subject: str | None = None) -> None:
-    """Send email via Gmail SMTP. Used for OTP verification and session summaries."""
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-
-    smtp_user = os.environ.get("SMTP_USER", "")
-    smtp_pass = os.environ.get("SMTP_PASS", "")
-    if not smtp_user or not smtp_pass:
-        raise RuntimeError("SMTP_USER / SMTP_PASS not configured")
+    """Send the OTP email (or a pre-built HTML body, for session summaries) via Resend. Raises on failure."""
+    from ..services.email_service import send_email
 
     first_name = (name or to_email).split()[0]
-    html_body = f"""
-    <div style="font-family:'Inter',Arial,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a;">
-      <div style="padding:32px 0 16px;border-bottom:1px solid #e5e5e5;">
-        <p style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:0.2em;color:#888;">
-          Merantix Capital · LP Portal
-        </p>
-        <h1 style="margin:8px 0 0;font-size:22px;font-weight:700;">Verify your email</h1>
-      </div>
-      <div style="padding:24px 0;">
-        <p style="color:#555;font-size:14px;">Hi {first_name},</p>
-        <p style="color:#555;font-size:14px;">
-          Enter this code in the portal to verify your email address.
-          The code expires in {_OTP_TTL_MINUTES} minutes.
-        </p>
-        <div style="margin:32px 0;text-align:center;">
-          <span style="display:inline-block;background:#f4f4f4;border-radius:12px;padding:20px 40px;
-                       font-size:36px;font-weight:700;letter-spacing:0.35em;color:#1a1a1a;">
-            {code}
-          </span>
-        </div>
-        <p style="color:#aaa;font-size:12px;">
-          If you didn't create an account, you can safely ignore this email.
-        </p>
-      </div>
-      <div style="border-top:1px solid #e5e5e5;padding:16px 0;font-size:11px;color:#aaa;text-align:center;">
-        Merantix Capital LP Portal · Confidential · For Limited Partners only
-      </div>
-    </div>
-    """
 
     # If `code` looks like a pre-built HTML body (summary email), use it directly
     if code.strip().startswith("<"):
@@ -284,16 +248,7 @@ def _send_otp_email(to_email: str, name: str, code: str, subject: str | None = N
     </div>
     """
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject or "Your Merantix LP Portal verification code"
-    msg["From"] = f"Merantix Capital <{smtp_user}>"
-    msg["To"] = to_email
-    msg.attach(MIMEText(html_body, "html"))
-
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_user, to_email, msg.as_string())
-        log.info("Email sent to %s via Gmail SMTP", to_email)
+    send_email([to_email], subject or "Your Merantix LP Portal verification code", html=html_body)
 
 _COLORS = [
     "oklch(0.92 0.25 120)",

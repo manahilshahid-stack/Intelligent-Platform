@@ -25,8 +25,7 @@
   {% if not smtp_ok %}
   <div class="alert alert-error">
     Email sending is not configured — reminders can't go out.
-    Set <code>SMTP_HOST</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code>
-    (Google App Password) on Railway.
+    Set <code>RESEND_API_KEY</code> and <code>EMAIL_FROM</code> on Railway.
   </div>
   {% endif %}
 

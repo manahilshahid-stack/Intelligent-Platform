@@ -15,7 +15,7 @@ _TMP = Path(tempfile.mkdtemp(prefix="ip-tests-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{_TMP / 'test.db'}"
 os.environ["SECRET_KEY"] = "test-secret-key"
 os.environ["ENABLE_SCHEDULER"] = "0"
-for _name in ("OPENROUTER_API_KEY", "SMTP_USER", "SMTP_PASS", "ATTIO_API_KEY", "LUMA_API_KEY"):
+for _name in ("OPENROUTER_API_KEY", "RESEND_API_KEY", "EMAIL_FROM", "ATTIO_API_KEY", "LUMA_API_KEY"):
     os.environ.pop(_name, None)
 
 import pytest  # noqa: E402

@@ -39,7 +39,7 @@ def admin_reporting_tracker(
     message: str | None = None,
     error: str | None = None,
 ):
-    from ..services.email_service import smtp_configured
+    from ..services.email_service import email_configured
     from ..services.reminder_service import (
         current_collection_period, due_date, get_founder_contacts,
         recent_periods, reminder1_date, status_for,
@@ -71,7 +71,7 @@ def admin_reporting_tracker(
         "r1_date": reminder1_date(year, quarter),
         "uploaded": uploaded,
         "total": len(rows),
-        "smtp_ok": smtp_configured(),
+        "smtp_ok": email_configured(),
         "message": message,
         "error": error,
     })
